@@ -60,6 +60,22 @@ class Management(models.Model):
     def __str__(self):
         return self.Management_name
 
+
+class FaceEmbedding(models.Model):
+    """
+    Model to store face embeddings for users.
+    Since we can't modify Django's built-in User model easily,
+    we store embeddings separately.
+    """
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='face_embedding')
+    embedding = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Face embedding for {self.user.username}"
+
+
 class TaughtCourse(models.Model):
     course = models.ForeignKey('Course', on_delete=models.CASCADE, related_name='taught_courses')
     teacher = models.ForeignKey('Teacher', on_delete=models.CASCADE, related_name='taught_courses')

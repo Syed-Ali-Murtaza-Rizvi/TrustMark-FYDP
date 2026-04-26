@@ -13,13 +13,16 @@ from rest_framework import status, generics, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework_simplejwt.tokens import RefreshToken
 import qrcode
 import io
 import base64
 import secrets
+import requests
+import json
+import math
 from .serializers import (
     StudentRegistrationSerializer,
     TeacherRegistrationSerializer,
@@ -43,9 +46,8 @@ from .serializers import (
 )
 from .models import (
     Student, Teacher, Management, StudentCourse, TaughtCourse, Course, Class,
-    UpdateAttendanceRequest, AttendanceSession, AttendanceRecord
+    UpdateAttendanceRequest, AttendanceSession, AttendanceRecord, FaceEmbedding,
 )
-
 
 # ============ Unified Frontend-Compatible Endpoints ============
 
@@ -2382,6 +2384,188 @@ class CourseAttendanceSummaryView(APIView):
         }
         serializer = CourseAttendanceSummarySerializer(data)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+# ============ Face Recognition APIs ============
+
+def _cosine_similarity(vec_a, vec_b):
+    """Compute cosine similarity for two equal-length vectors."""
+    if not vec_a or not vec_b or len(vec_a) != len(vec_b):
+        return 0.0
+
+    dot = sum(a * b for a, b in zip(vec_a, vec_b))
+    norm_a = math.sqrt(sum(a * a for a in vec_a))
+    norm_b = math.sqrt(sum(b * b for b in vec_b))
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def register_face(request):
+    """
+    Register face API: Accepts an image and calls the microservice to generate an embedding.
+    Saves the embedding to the user's FaceEmbedding record.
+    """
+    if 'file' not in request.FILES:
+        return Response(
+            {"error": "No file provided in request"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    user_id = request.POST.get('user_id') or request.data.get('user_id')
+    if not user_id:
+        return Response(
+            {"error": "user_id is required for testing"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return Response(
+            {"error": "User not found"},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    image_file = request.FILES['file']
+
+    try:
+        files = {'file': (image_file.name, image_file.read(), image_file.content_type)}
+        microservice_url = "http://127.0.0.1:8001/register-face/"
+        response = requests.post(microservice_url, files=files, timeout=30)
+
+        if response.status_code != 200:
+            return Response(
+                {"error": f"Microservice error: {response.text}"},
+                status=status.HTTP_502_BAD_GATEWAY
+            )
+
+        microservice_data = response.json()
+        embedding = microservice_data.get('embedding')
+        if embedding is None:
+            return Response(
+                {"error": "Microservice did not return an embedding"},
+                status=status.HTTP_502_BAD_GATEWAY
+            )
+
+        face_embedding, _ = FaceEmbedding.objects.get_or_create(user=user)
+        face_embedding.embedding = embedding
+        face_embedding.save(update_fields=['embedding'])
+
+        return Response(
+            {
+                "message": "Face registered successfully",
+                "embedding_saved": True
+            },
+            status=status.HTTP_200_OK
+        )
+
+    except requests.exceptions.Timeout:
+        return Response(
+            {"error": "Microservice request timed out"},
+            status=status.HTTP_504_GATEWAY_TIMEOUT
+        )
+    except requests.exceptions.ConnectionError:
+        return Response(
+            {"error": "Could not connect to face recognition microservice"},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE
+        )
+    except Exception as e:
+        return Response(
+            {"error": f"An error occurred: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def verify_face(request):
+    """
+    Verify face API: Accepts an image and user_id, generates a new embedding via microservice,
+    and compares it to the stored embedding for that user.
+    """
+    if 'file' not in request.FILES:
+        return Response(
+            {"error": "No file provided in request"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    user_id = request.POST.get('user_id') or request.data.get('user_id')
+    if not user_id:
+        return Response(
+            {"error": "user_id is required for testing"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return Response(
+            {"error": "User not found"},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    try:
+        face_embedding = user.face_embedding
+        stored_embedding = face_embedding.embedding
+        if stored_embedding is None:
+            raise FaceEmbedding.DoesNotExist
+    except FaceEmbedding.DoesNotExist:
+        return Response(
+            {"error": "No face embedding found for this user. Please register face first."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    image_file = request.FILES['file']
+
+    try:
+        files = {'file': (image_file.name, image_file.read(), image_file.content_type)}
+        microservice_url = "http://127.0.0.1:8001/register-face/"
+        response = requests.post(microservice_url, files=files, timeout=30)
+
+        if response.status_code != 200:
+            return Response(
+                {"error": f"Microservice error: {response.text}"},
+                status=status.HTTP_502_BAD_GATEWAY
+            )
+
+        microservice_data = response.json()
+        new_embedding = microservice_data.get('embedding')
+        if new_embedding is None:
+            return Response(
+                {"error": "Microservice did not return an embedding"},
+                status=status.HTTP_502_BAD_GATEWAY
+            )
+
+        similarity = _cosine_similarity(stored_embedding, new_embedding)
+        threshold = 0.70
+        is_match = similarity >= threshold
+
+        return Response(
+            {
+                "similarity_score": similarity,
+                "is_match": is_match
+            },
+            status=status.HTTP_200_OK
+        )
+
+    except requests.exceptions.Timeout:
+        return Response(
+            {"error": "Microservice request timed out"},
+            status=status.HTTP_504_GATEWAY_TIMEOUT
+        )
+    except requests.exceptions.ConnectionError:
+        return Response(
+            {"error": "Could not connect to face recognition microservice"},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE
+        )
+    except Exception as e:
+        return Response(
+            {"error": f"An error occurred: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 
 # Template-based views for login and register pages

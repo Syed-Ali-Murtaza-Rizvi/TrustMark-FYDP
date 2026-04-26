@@ -37,6 +37,8 @@ from .views import (
     TeacherFilterOptionsView,
     StudentAttendanceSummaryView,
     CourseAttendanceSummaryView,
+    register_face,
+    verify_face,
 )
 
 # Create a router for CRUD ViewSets
@@ -110,4 +112,8 @@ urlpatterns = [
     
     # Logout
     path('logout/', logout_page, name='logout-page'),
+    
+    # Face Recognition APIs
+    path('face/register/', register_face, name='register-face'),
+    path('face/verify/', verify_face, name='verify-face'),
 ]
