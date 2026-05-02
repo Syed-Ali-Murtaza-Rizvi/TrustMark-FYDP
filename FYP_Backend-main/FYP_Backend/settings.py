@@ -16,6 +16,14 @@ from pathlib import Path
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - optional in some environments
+    load_dotenv = None
+
+if load_dotenv is not None:
+    load_dotenv(BASE_DIR / '.env')
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
@@ -26,15 +34,29 @@ SECRET_KEY = 'django-insecure-y5(s6m$eihu0hw^js7j1dfdmposk(l_877=0!b24!*4p-^19ez
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['testserver', 'localhost', '127.0.0.1']
+# Comma-separated hosts/IPs for dev access (e.g. "localhost,127.0.0.1,192.168.1.10").
+_default_allowed_hosts = ['testserver', 'localhost', '127.0.0.1']
+_env_allowed_hosts = [host.strip() for host in os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',') if host.strip()]
+ALLOWED_HOSTS = _env_allowed_hosts or _default_allowed_hosts
+for _host in _default_allowed_hosts:
+    if _host not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(_host)
+
+# Base URLs used for event invite-link generation and redirect flows.
+DEFAULT_EVENT_BASE_URL = os.environ.get('DEFAULT_EVENT_BASE_URL', 'http://localhost:8000').rstrip('/')
+FRONTEND_BASE_URL = os.environ.get('FRONTEND_BASE_URL', 'http://localhost:5173').rstrip('/')
 
 # CORS – allow the Vite dev server (default port 5173) and any other local frontend
-CORS_ALLOWED_ORIGINS = [
+_default_cors_origins = [
     'http://localhost:5173',
     'http://localhost:3000',
     'http://127.0.0.1:5173',
     'http://127.0.0.1:3000',
 ]
+_env_cors_origins = [origin.strip() for origin in os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',') if origin.strip()]
+CORS_ALLOWED_ORIGINS = _default_cors_origins + _env_cors_origins
+if FRONTEND_BASE_URL not in CORS_ALLOWED_ORIGINS:
+    CORS_ALLOWED_ORIGINS.append(FRONTEND_BASE_URL)
 
 
 # Application definition
@@ -90,7 +112,6 @@ WSGI_APPLICATION = 'FYP_Backend.wsgi.application'
 
 # Use SQLite for testing if TESTING environment variable is set
 import sys
-import os
 TESTING = 'test' in sys.argv
 USE_SQLITE = os.environ.get('USE_SQLITE', 'True') == 'True'
 

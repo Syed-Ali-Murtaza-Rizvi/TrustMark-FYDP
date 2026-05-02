@@ -25,9 +25,13 @@ const Login = () => {
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
-    const token = (params.get("eventToken") || "").trim();
-    if (token) {
-      localStorage.setItem("pendingEventToken", token);
+    const eventToken = (params.get("eventToken") || "").trim();
+    const attendanceToken = (params.get("attendanceToken") || "").trim();
+    if (eventToken) {
+      localStorage.setItem("pendingEventToken", eventToken);
+    }
+    if (attendanceToken) {
+      localStorage.setItem("pendingAttendanceToken", attendanceToken);
     }
   }, [location.search]);
 
@@ -44,6 +48,27 @@ const Login = () => {
         { headers: { Authorization: `Bearer ${accessToken}` } }
       );
       localStorage.removeItem("pendingEventToken");
+    } catch (err) {
+      const apiError = err.response?.data;
+      const message = apiError ? Object.values(apiError).flat().join(" ") : "";
+      if (message) {
+        alert(message);
+      }
+    }
+  };
+
+  const markPendingAttendance = async (accessToken) => {
+    const pendingToken = (localStorage.getItem("pendingAttendanceToken") || "").trim();
+    if (!pendingToken) return;
+
+    try {
+      await axios.post(
+        `/api/events/attendance-by-link/${encodeURIComponent(pendingToken)}/`,
+        {},
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      localStorage.removeItem("pendingAttendanceToken");
+      alert("Attendance marked successfully.");
     } catch (err) {
       const apiError = err.response?.data;
       const message = apiError ? Object.values(apiError).flat().join(" ") : "";
@@ -257,6 +282,7 @@ const Login = () => {
         );
 
         await registerPendingInvite(result.access);
+        await markPendingAttendance(result.access);
         navigate("/participant");
       } catch (err) {
         const result = err.response?.data;

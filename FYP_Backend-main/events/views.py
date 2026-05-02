@@ -42,6 +42,12 @@ def _event_from_registration_token(token):
     return Event.objects.filter(registration_link__iendswith=f"/{token}").first()
 
 
+def _event_from_attendance_token(token):
+    if not token:
+        return None
+    return Event.objects.filter(attendance_qr_code_url__iendswith=f"/{token}").first()
+
+
 class EventViewSet(viewsets.ModelViewSet):
     queryset = Event.objects.all()
     serializer_class = EventSerializer
@@ -285,7 +291,73 @@ class EventRegisterByLinkView(APIView):
         }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
 
+class EventAttendanceByLinkView(APIView):
+    """Resolve attendance QR links and mark attendance for participants."""
+
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, token):
+        event = _event_from_attendance_token(token)
+        if not event:
+            return Response({'error': 'Invalid attendance QR link'}, status=status.HTTP_404_NOT_FOUND)
+        return Response({
+            'eventId': event.id,
+            'title': event.title,
+            'isUpcoming': _is_event_upcoming(event),
+        })
+
+    def post(self, request, token):
+        event = _event_from_attendance_token(token)
+        if not event:
+            return Response({'error': 'Invalid attendance QR link'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not request.user or not request.user.is_authenticated:
+            return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        participant = EventParticipant.objects.filter(user=request.user).first()
+        if not participant:
+            return Response(
+                {'error': 'Only participant accounts can mark attendance via QR'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        registration = Registration.objects.filter(user=request.user, event=event).first()
+        if not registration:
+            return Response(
+                {'error': 'You must register for this event before marking attendance'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not _is_event_upcoming(event):
+            return Response(
+                {'error': 'Attendance is closed for this event'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        registration.attended = True
+        registration.save(update_fields=['attended'])
+        attendance, created = Attendance.objects.get_or_create(
+            registration=registration,
+            defaults={'present': True},
+        )
+        if not created and not attendance.present:
+            attendance.present = True
+            attendance.save(update_fields=['present'])
+
+        return Response({
+            'message': 'Attendance marked successfully',
+            'eventId': event.id,
+            'attendanceId': attendance.id,
+        }, status=status.HTTP_200_OK)
+
+
 def event_register_redirect(request, token):
     """Handle clicked event registration links by redirecting to frontend login."""
     frontend_base = getattr(settings, 'FRONTEND_BASE_URL', 'http://localhost:5173').rstrip('/')
     return redirect(f"{frontend_base}/login?eventToken={token}")
+
+
+def attendance_qr_redirect(request, token):
+    """Handle attendance QR links by redirecting to frontend login."""
+    frontend_base = getattr(settings, 'FRONTEND_BASE_URL', 'http://localhost:5173').rstrip('/')
+    return redirect(f"{frontend_base}/login?attendanceToken={token}")
