@@ -46,6 +46,20 @@ for _host in _default_allowed_hosts:
 DEFAULT_EVENT_BASE_URL = os.environ.get('DEFAULT_EVENT_BASE_URL', 'http://localhost:8000').rstrip('/')
 FRONTEND_BASE_URL = os.environ.get('FRONTEND_BASE_URL', 'http://localhost:5173').rstrip('/')
 
+# External CV module integration for face registration.
+CV_MODULE_BASE_URL = os.environ.get('CV_MODULE_BASE_URL', 'http://127.0.0.1:9000').rstrip('/')
+CV_MODULE_REGISTER_PATH = os.environ.get('CV_MODULE_REGISTER_PATH', '/register-face/')
+CV_MODULE_REGISTER_URL = os.environ.get(
+    'CV_MODULE_REGISTER_URL',
+    f'{CV_MODULE_BASE_URL}{CV_MODULE_REGISTER_PATH}',
+)
+CV_MODULE_VERIFY_PATH = os.environ.get('CV_MODULE_VERIFY_PATH', '/verify-face/')
+CV_MODULE_VERIFY_URL = os.environ.get(
+    'CV_MODULE_VERIFY_URL',
+    f'{CV_MODULE_BASE_URL}{CV_MODULE_VERIFY_PATH}',
+)
+CV_MODULE_TIMEOUT_SECONDS = float(os.environ.get('CV_MODULE_TIMEOUT_SECONDS', '15'))
+
 # CORS – allow the Vite dev server (default port 5173) and any other local frontend
 _default_cors_origins = [
     'http://localhost:5173',
@@ -170,7 +184,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Asia/Karachi'
 
 USE_I18N = True
 

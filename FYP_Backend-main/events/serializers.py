@@ -123,7 +123,7 @@ class EventSerializer(serializers.ModelSerializer):
                 result.append({
                     'id': str(reg.user.id),
                     'status': 'present' if att.present else 'absent',
-                    'time': att.timestamp.strftime('%I:%M %p') if att.timestamp else '',
+                    'time': timezone.localtime(att.timestamp).strftime('%I:%M %p') if att.timestamp else '',
                 })
             except Attendance.DoesNotExist:
                 pass

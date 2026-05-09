@@ -31,6 +31,8 @@ from .views import (
     QRScanView,
     UnifiedLoginView,
     UnifiedSignupView,
+    FaceRegisterView,
+    FaceVerifyView,
     UserDetailsView,
     UserLogoutView,
     StudentFilterOptionsView,
@@ -57,6 +59,8 @@ urlpatterns = [
     # These match the URLs defined in the frontend's common/index.js
     path('login', UnifiedLoginView.as_view(), name='unified-login'),
     path('signup', UnifiedSignupView.as_view(), name='unified-signup'),
+    path('face/register/', FaceRegisterView.as_view(), name='face-register'),
+    path('face/verify/', FaceVerifyView.as_view(), name='face-verify'),
     path('user-details', UserDetailsView.as_view(), name='user-details'),
     path('user-logout', UserLogoutView.as_view(), name='user-logout'),
 

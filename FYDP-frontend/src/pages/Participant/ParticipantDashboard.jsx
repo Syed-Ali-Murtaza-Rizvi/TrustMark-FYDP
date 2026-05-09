@@ -10,14 +10,13 @@ import {
   CalendarX2,
   QrCode,
   X,
-  Upload,
-  ImagePlus,
+  Camera,
+  RefreshCw,
 } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 import axiosInstance from "../../utils/axiosInstance";
 import "./participant.css";
 
-/* ─── tiny Event Detail Modal ─── */
 const EventDetailModal = ({ event, onClose }) => {
   if (!event) return null;
   return (
@@ -86,80 +85,148 @@ const EventDetailModal = ({ event, onClose }) => {
   );
 };
 
-/* ─── Photo Upload Modal ─── */
-const PhotoUploadModal = ({ eventTitle, onClose, onSubmit }) => {
-  const [preview, setPreview] = useState(null);
-  const [file, setFile] = useState(null);
-  const inputRef = useRef();
+const FaceVerifyModal = ({ eventTitle, onClose, onSubmit, submitting }) => {
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const [capturedBlob, setCapturedBlob] = useState(null);
+  const [preview, setPreview] = useState("");
 
-  const handleFile = (e) => {
-    const f = e.target.files[0];
-    if (!f) return;
-    setFile(f);
-    setPreview(URL.createObjectURL(f));
+  useEffect(() => {
+    let mounted = true;
+
+    const startCamera = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user" },
+          audio: false,
+        });
+        if (!mounted) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      } catch {
+        alert("Camera access failed. Please allow camera permissions.");
+        onClose();
+      }
+    };
+
+    startCamera();
+    return () => {
+      mounted = false;
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+      }
+    };
+  }, [onClose]);
+
+  const capture = async () => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth || !video.videoHeight) {
+      alert("Camera is not ready yet.");
+      return;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, 0, 0);
+
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+    if (!blob) {
+      alert("Failed to capture image. Please try again.");
+      return;
+    }
+    setCapturedBlob(blob);
+    setPreview(URL.createObjectURL(blob));
   };
 
-  const handleSubmit = () => {
-    if (!file) { alert("Please select an image first."); return; }
-    onSubmit(file);
+  const retake = () => {
+    if (preview) URL.revokeObjectURL(preview);
+    setPreview("");
+    setCapturedBlob(null);
+  };
+
+  const submit = () => {
+    if (!capturedBlob) {
+      alert("Please capture your face first.");
+      return;
+    }
+    onSubmit(capturedBlob);
   };
 
   return (
     <div className="pqr-overlay" onClick={onClose}>
       <div className="pqr-upload-modal" onClick={(e) => e.stopPropagation()}>
         <div className="pqr-modal-header">
-          <ImagePlus size={20} color="#2c5f9e" />
-          <span>Upload Attendance Photo</span>
+          <Camera size={20} color="#2c5f9e" />
+          <span>Live Face Verification</span>
           <button className="pqr-close-btn" onClick={onClose}><X size={18} /></button>
         </div>
         <p className="pqr-modal-subtitle">Event: <strong>{eventTitle}</strong></p>
-        <p className="pqr-modal-hint">Please upload a clear photo of yourself for attendance verification.</p>
+        <p className="pqr-modal-hint">Capture a live photo to verify attendance.</p>
 
-        <div
-          className={`pqr-drop-zone${preview ? " pqr-drop-zone--has-file" : ""}`}
-          onClick={() => inputRef.current.click()}
-        >
-          {preview ? (
-            <img src={preview} alt="preview" className="pqr-preview-img" />
+        {!preview ? (
+          <video
+            ref={videoRef}
+            autoPlay
+            muted
+            playsInline
+            style={{ width: "100%", borderRadius: 12, background: "#000", minHeight: 250 }}
+          />
+        ) : (
+          <img src={preview} alt="Captured face" className="pqr-preview-img" />
+        )}
+
+        <div className="pqr-modal-actions">
+          <button className="pqr-cancel-btn" onClick={onClose} disabled={submitting}>Cancel</button>
+          {!preview ? (
+            <button className="pqr-submit-btn" onClick={capture} disabled={submitting}>
+              <Camera size={14} /> Capture
+            </button>
           ) : (
             <>
-              <Upload size={32} color="#a0b0c8" />
-              <span>Click to choose image</span>
-              <span className="pqr-drop-hint">JPG, PNG or WEBP</span>
+              <button className="pqr-reselect-btn" onClick={retake} disabled={submitting}>
+                <RefreshCw size={14} /> Retake
+              </button>
+              <button className="pqr-submit-btn" onClick={submit} disabled={submitting}>
+                {submitting ? "Verifying..." : "Verify & Mark"}
+              </button>
             </>
           )}
-        </div>
-        <input
-          ref={inputRef}
-          type="file"
-          accept="image/*"
-          style={{ display: "none" }}
-          onChange={handleFile}
-        />
-        {preview && (
-          <button
-            className="pqr-reselect-btn"
-            onClick={() => { setPreview(null); setFile(null); inputRef.current.click(); }}
-          >
-            Change Photo
-          </button>
-        )}
-        <div className="pqr-modal-actions">
-          <button className="pqr-cancel-btn" onClick={onClose}>Cancel</button>
-          <button className="pqr-submit-btn" onClick={handleSubmit}>
-            <Upload size={14} /> Submit
-          </button>
         </div>
       </div>
     </div>
   );
 };
 
-/* ─── Main Page ─── */
+const extractAttendanceToken = (decodedText) => {
+  const text = String(decodedText || "").trim();
+  if (!text) return "";
+
+  try {
+    const url = new URL(text);
+    const segments = url.pathname.split("/").filter(Boolean);
+    const idx = segments.indexOf("attendance-qr");
+    if (idx !== -1 && segments[idx + 1]) return segments[idx + 1];
+  } catch {
+    // not a URL, try as plain token
+  }
+
+  if (text.includes("/") && text.split("/").filter(Boolean).length > 1) {
+    return text.split("/").filter(Boolean).pop();
+  }
+  return text;
+};
+
 const ParticipantDashboard = () => {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [scanningEvent, setScanningEvent] = useState(null);
-  const [uploadEvent, setUploadEvent]     = useState(null);
+  const [verifyContext, setVerifyContext] = useState(null);
+  const [verifying, setVerifying] = useState(false);
   const [participantData, setParticipantData] = useState({
     profile: { name: "", email: "", phone: "" },
     upcomingEvents: [],
@@ -167,31 +234,54 @@ const ParticipantDashboard = () => {
   });
   const html5QrRef = useRef(null);
 
+  const fetchDashboard = async () => {
+    try {
+      const { data } = await axiosInstance.get("/api/events/participants/dashboard/");
+      setParticipantData({
+        profile: data?.profile || { name: "", email: "", phone: "" },
+        upcomingEvents: Array.isArray(data?.upcomingEvents) ? data.upcomingEvents : [],
+        pastEvents: Array.isArray(data?.pastEvents) ? data.pastEvents : [],
+      });
+    } catch (error) {
+      console.error("Failed to load participant dashboard", error);
+    }
+  };
+
   useEffect(() => {
-    const fetchDashboard = async () => {
+    fetchDashboard();
+  }, []);
+
+  useEffect(() => {
+    const pendingToken = (localStorage.getItem("pendingAttendanceToken") || "").trim();
+    if (!pendingToken) return;
+
+    const loadPendingContext = async () => {
       try {
-        const { data } = await axiosInstance.get("/api/events/participants/dashboard/");
-        setParticipantData({
-          profile: data?.profile || { name: "", email: "", phone: "" },
-          upcomingEvents: Array.isArray(data?.upcomingEvents) ? data.upcomingEvents : [],
-          pastEvents: Array.isArray(data?.pastEvents) ? data.pastEvents : [],
+        const { data } = await axiosInstance.get(
+          `/api/events/attendance-by-link/${encodeURIComponent(pendingToken)}/`
+        );
+        setVerifyContext({
+          token: pendingToken,
+          title: data?.title || "Scanned Event",
         });
-      } catch (error) {
-        console.error("Failed to load participant dashboard", error);
+      } catch {
+        localStorage.removeItem("pendingAttendanceToken");
       }
     };
-    fetchDashboard();
+
+    loadPendingContext();
   }, []);
 
   const { profile, upcomingEvents, pastEvents } = participantData;
 
-  /* ── QR scanner helpers ── */
   const stopScanner = async () => {
     if (!html5QrRef.current) return;
     try {
       await html5QrRef.current.stop();
       await html5QrRef.current.clear();
-    } catch {}
+    } catch {
+      // ignore scanner cleanup errors
+    }
     html5QrRef.current = null;
   };
 
@@ -200,15 +290,15 @@ const ParticipantDashboard = () => {
     setScanningEvent(null);
   };
 
-  /* Lock body scroll while scanner is open */
   useEffect(() => {
     if (!scanningEvent) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = prev; };
+    return () => {
+      document.body.style.overflow = prev;
+    };
   }, [scanningEvent]);
 
-  /* Start camera once the scanner overlay mounts */
   useEffect(() => {
     if (!scanningEvent) return;
     const eventSnapshot = scanningEvent;
@@ -219,10 +309,18 @@ const ParticipantDashboard = () => {
         await html5QrRef.current.start(
           { facingMode: "environment" },
           { fps: 10, qrbox: 240 },
-          async () => {
+          async (decodedText) => {
+            const token = extractAttendanceToken(decodedText);
             await stopScanner();
             setScanningEvent(null);
-            setUploadEvent(eventSnapshot);
+            if (!token) {
+              alert("Could not read attendance token from QR code.");
+              return;
+            }
+            setVerifyContext({
+              token,
+              title: eventSnapshot?.title || "Scanned Event",
+            });
           }
         );
       } catch {
@@ -232,19 +330,42 @@ const ParticipantDashboard = () => {
     };
 
     start();
-    return () => { stopScanner(); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      stopScanner();
+    };
   }, [scanningEvent]);
 
-  const handlePhotoSubmit = (file) => {
-    console.log("Attendance photo submitted:", { event: uploadEvent?.title, file });
-    alert(`Photo submitted successfully for "${uploadEvent?.title}"!`);
-    setUploadEvent(null);
+  const handleFaceVerifySubmit = async (imageBlob) => {
+    if (!verifyContext?.token) return;
+    setVerifying(true);
+    try {
+      const formData = new FormData();
+      formData.append("face_image", imageBlob, "live-face.jpg");
+
+      const { data } = await axiosInstance.post(
+        `/api/events/attendance-by-link/${encodeURIComponent(verifyContext.token)}/`,
+        formData
+      );
+
+      if (data?.is_match) {
+        alert("Attendance marked successfully.");
+        localStorage.removeItem("pendingAttendanceToken");
+        setVerifyContext(null);
+        await fetchDashboard();
+      } else {
+        alert("Face does not match, please try again.");
+      }
+    } catch (error) {
+      const apiError = error?.response?.data;
+      const message = apiError ? Object.values(apiError).flat().join(" ") : "";
+      alert(message || "Face does not match, please try again.");
+    } finally {
+      setVerifying(false);
+    }
   };
 
   return (
     <div className="participant-page">
-      {/* ── Sidebar Profile Card ── */}
       <aside className="participant-profile-card">
         <div className="participant-profile-banner" />
 
@@ -265,15 +386,11 @@ const ParticipantDashboard = () => {
             {profile.phone}
           </div>
         </div>
-
       </aside>
 
-      {/* ── Main Content ── */}
       <main className="participant-main">
-        {/* Header */}
         <div className="participant-header">Attendance Management System</div>
 
-        {/* Upcoming Events */}
         <div>
           <p className="participant-section-label">Upcoming Events</p>
 
@@ -296,7 +413,6 @@ const ParticipantDashboard = () => {
           )}
         </div>
 
-        {/* Past Events */}
         {pastEvents.length > 0 && (
           <div>
             <p className="participant-section-label">Past Events</p>
@@ -313,13 +429,11 @@ const ParticipantDashboard = () => {
         )}
       </main>
 
-      {/* Modal */}
       <EventDetailModal
         event={selectedEvent}
         onClose={() => setSelectedEvent(null)}
       />
 
-      {/* QR Scanner Overlay */}
       {scanningEvent && (
         <div className="pqr-overlay">
           <div className="pqr-scanner-box">
@@ -329,7 +443,7 @@ const ParticipantDashboard = () => {
               <button className="pqr-close-btn" onClick={closeScanner}><X size={18} /></button>
             </div>
             <p className="pqr-scanner-subtitle">
-              Point your camera at the event QR code for<br />
+              Point your camera at the attendance QR code for<br />
               <strong>{scanningEvent.title}</strong>
             </p>
             <div id="pqr-reader" className="pqr-reader" />
@@ -337,19 +451,18 @@ const ParticipantDashboard = () => {
         </div>
       )}
 
-      {/* Photo Upload Modal */}
-      {uploadEvent && (
-        <PhotoUploadModal
-          eventTitle={uploadEvent.title}
-          onClose={() => setUploadEvent(null)}
-          onSubmit={handlePhotoSubmit}
+      {verifyContext && (
+        <FaceVerifyModal
+          eventTitle={verifyContext.title}
+          onClose={() => setVerifyContext(null)}
+          onSubmit={handleFaceVerifySubmit}
+          submitting={verifying}
         />
       )}
     </div>
   );
 };
 
-/* ─── Event Card sub-component ─── */
 const EventCard = ({ event, onView, onScanQR }) => (
   <div className="participant-event-card">
     <div className="participant-card-top">

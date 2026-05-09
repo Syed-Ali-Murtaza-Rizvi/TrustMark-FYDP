@@ -292,7 +292,8 @@ const ManageTeachers = ({ programs = [], years = [] }) => {
     email: "",
     password: "",
     phone: "",
-    courses: [createEmptyCourse()]
+    courses: [createEmptyCourse()],
+    faceImage: null,
   });
 
   const [registerLoading, setRegisterLoading] = useState(false);
@@ -322,7 +323,10 @@ const ManageTeachers = ({ programs = [], years = [] }) => {
      HANDLERS
   ====================== */
   const handleChange = (e) =>
-    setForm({ ...form, [e.target.name]: e.target.value });
+    setForm({
+      ...form,
+      [e.target.name]: e.target.name === "faceImage" ? (e.target.files?.[0] || null) : e.target.value,
+    });
 
   const updateCourseList = (setter, key, index, field, value) => {
     setter(prev => ({
@@ -358,6 +362,10 @@ const ManageTeachers = ({ programs = [], years = [] }) => {
       setRegisterError("Name, Email, and Password are required");
       return;
     }
+    if (!form.faceImage) {
+      setRegisterError("Face image is required.");
+      return;
+    }
 
     const courseError = validateCourseEntries(form.courses);
     if (courseError) {
@@ -370,15 +378,15 @@ const ManageTeachers = ({ programs = [], years = [] }) => {
 
     try {
       const sanitizedCourses = sanitizeCourses(form.courses);
-      const payload = {
-        role: "teacher",
-        name: form.name,
-        email: form.email,
-        password: form.password,
-        ...(form.id && { id: form.id }),
-        ...(form.phone && { phone: form.phone }),
-        courses: sanitizedCourses,
-      };
+      const payload = new FormData();
+      payload.append("role", "teacher");
+      payload.append("name", form.name);
+      payload.append("email", form.email);
+      payload.append("password", form.password);
+      if (form.id) payload.append("id", form.id);
+      if (form.phone) payload.append("phone", form.phone);
+      payload.append("courses", JSON.stringify(sanitizedCourses));
+      payload.append("face_image", form.faceImage);
 
       const { data } = await axios.post("/api/signup", payload);
       const savedTeacher = normalizeTeacher({
@@ -395,7 +403,7 @@ const ManageTeachers = ({ programs = [], years = [] }) => {
         localStorage.setItem("teachers", JSON.stringify(nextTeachers));
         return nextTeachers;
       });
-      setForm({ id: "", name: "", email: "", password: "", phone: "", courses: [createEmptyCourse()] });
+      setForm({ id: "", name: "", email: "", password: "", phone: "", courses: [createEmptyCourse()], faceImage: null });
     } catch (err) {
       console.error("Teacher registration error:", err.response?.data || err.message);
       const errData = err.response?.data;
@@ -537,6 +545,7 @@ const ManageTeachers = ({ programs = [], years = [] }) => {
           <input name="name" placeholder="Full Name *" value={form.name} onChange={handleChange} />
           <input name="email" placeholder="Email *" value={form.email} onChange={handleChange} />
           <input name="password" type="password" placeholder="Password *" value={form.password} onChange={handleChange} />
+          <input name="faceImage" type="file" accept="image/*" onChange={handleChange} />
           <input name="id" placeholder="Teacher ID" value={form.id} onChange={handleChange} />
           <input name="phone" placeholder="Phone" value={form.phone} onChange={handleChange} />
         </div>

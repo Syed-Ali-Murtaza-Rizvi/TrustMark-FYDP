@@ -8,8 +8,11 @@ from django.conf import settings
 from django.shortcuts import get_object_or_404, redirect
 from django.db import models
 from django.utils import timezone
+import json
+import requests
 
 from .models import Event, Registration, Attendance, EventParticipant
+from core.models import UserFaceEmbedding
 from .serializers import (
     EventSerializer,
     RegistrationSerializer,
@@ -46,6 +49,41 @@ def _event_from_attendance_token(token):
     if not token:
         return None
     return Event.objects.filter(attendance_qr_code_url__iendswith=f"/{token}").first()
+
+
+def _verify_face_for_user(user, uploaded_file):
+    if uploaded_file is None:
+        return False, {'error': 'face_image file is required'}
+
+    profile = UserFaceEmbedding.objects.filter(user=user).first()
+    if not profile or not profile.embedding:
+        return False, {'error': 'No registered face embedding found for this user'}
+
+    verify_url = getattr(settings, 'CV_MODULE_VERIFY_URL', '').strip()
+    timeout_seconds = float(getattr(settings, 'CV_MODULE_TIMEOUT_SECONDS', 15))
+    if not verify_url:
+        return False, {'error': 'CV_MODULE_VERIFY_URL is not configured'}
+
+    uploaded_file.seek(0)
+    content_type = getattr(uploaded_file, 'content_type', None) or 'application/octet-stream'
+    files = {'file': (uploaded_file.name, uploaded_file.read(), content_type)}
+    data = {'stored_embedding': json.dumps(profile.embedding)}
+
+    try:
+        cv_resp = requests.post(verify_url, files=files, data=data, timeout=timeout_seconds)
+    except requests.RequestException as exc:
+        return False, {'error': f'CV verification call failed: {exc}'}
+
+    try:
+        payload = cv_resp.json()
+    except ValueError:
+        return False, {'error': f'CV module returned non-JSON response ({cv_resp.status_code})'}
+
+    if cv_resp.status_code >= 400:
+        return False, {'error': payload.get('error', 'CV verification failed'), 'cv_response': payload}
+
+    is_match = bool(payload.get('is_match'))
+    return is_match, payload
 
 
 class EventViewSet(viewsets.ModelViewSet):
@@ -334,6 +372,19 @@ class EventAttendanceByLinkView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        face_image = request.FILES.get('face_image') or request.FILES.get('file')
+        is_match, verify_payload = _verify_face_for_user(request.user, face_image)
+        if not is_match:
+            message = verify_payload.get('error') or 'Face does not match, please try again.'
+            return Response(
+                {
+                    'error': message,
+                    'is_match': False,
+                    'verify': verify_payload,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         registration.attended = True
         registration.save(update_fields=['attended'])
         attendance, created = Attendance.objects.get_or_create(
@@ -348,6 +399,8 @@ class EventAttendanceByLinkView(APIView):
             'message': 'Attendance marked successfully',
             'eventId': event.id,
             'attendanceId': attendance.id,
+            'is_match': True,
+            'verify': verify_payload,
         }, status=status.HTTP_200_OK)
 
 

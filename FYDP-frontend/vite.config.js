@@ -6,9 +6,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: true,
-    allowedHosts: [
-      'nikita-finical-semierectly.ngrok-free.dev',
-    ],
+    allowedHosts: true,
     proxy: {
       '/api': {
         target: 'http://localhost:8000',

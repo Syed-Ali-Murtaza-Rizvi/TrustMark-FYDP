@@ -57,25 +57,10 @@ const Login = () => {
     }
   };
 
-  const markPendingAttendance = async (accessToken) => {
+  const notifyPendingAttendance = () => {
     const pendingToken = (localStorage.getItem("pendingAttendanceToken") || "").trim();
     if (!pendingToken) return;
-
-    try {
-      await axios.post(
-        `/api/events/attendance-by-link/${encodeURIComponent(pendingToken)}/`,
-        {},
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
-      localStorage.removeItem("pendingAttendanceToken");
-      alert("Attendance marked successfully.");
-    } catch (err) {
-      const apiError = err.response?.data;
-      const message = apiError ? Object.values(apiError).flat().join(" ") : "";
-      if (message) {
-        alert(message);
-      }
-    }
+    alert("Attendance QR detected. Please complete live face verification on the participant dashboard.");
   };
 
   const handleOnChange = (e) => {
@@ -282,7 +267,7 @@ const Login = () => {
         );
 
         await registerPendingInvite(result.access);
-        await markPendingAttendance(result.access);
+        notifyPendingAttendance();
         navigate("/participant");
       } catch (err) {
         const result = err.response?.data;

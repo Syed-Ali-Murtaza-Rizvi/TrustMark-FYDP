@@ -3,6 +3,7 @@ from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
+from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.utils import timezone
@@ -21,6 +22,8 @@ import qrcode
 import io
 import base64
 import secrets
+import json
+import requests
 from .serializers import (
     StudentRegistrationSerializer,
     TeacherRegistrationSerializer,
@@ -44,12 +47,136 @@ from .serializers import (
 )
 from .models import (
     Student, Teacher, Management, StudentCourse, TaughtCourse, Course, Class,
-    UpdateAttendanceRequest, AttendanceSession, AttendanceRecord
+    UpdateAttendanceRequest, AttendanceSession, AttendanceRecord, UserFaceEmbedding
 )
 from events.models import EventParticipant, EventAdvisor
 
 
 # ============ Unified Frontend-Compatible Endpoints ============
+
+
+class FaceRegistrationServiceError(Exception):
+    pass
+
+
+def register_face_with_cv_module(user_id, uploaded_file):
+    """
+    Forward the uploaded image and user_id to the external CV service.
+    Returns parsed JSON payload from the CV module.
+    """
+    if uploaded_file is None:
+        raise FaceRegistrationServiceError("Face image file is required")
+
+    content_type = getattr(uploaded_file, 'content_type', None) or 'application/octet-stream'
+    register_url = getattr(settings, 'CV_MODULE_REGISTER_URL', '').strip()
+    timeout_seconds = float(getattr(settings, 'CV_MODULE_TIMEOUT_SECONDS', 10))
+    if not register_url:
+        raise FaceRegistrationServiceError("CV_MODULE_REGISTER_URL is not configured")
+
+    uploaded_file.seek(0)
+    files = {'file': (uploaded_file.name, uploaded_file.read(), content_type)}
+    data = {'user_id': str(user_id)}
+
+    try:
+        cv_response = requests.post(
+            register_url,
+            files=files,
+            data=data,
+            timeout=timeout_seconds,
+        )
+    except requests.RequestException as exc:
+        raise FaceRegistrationServiceError(f"CV module call failed: {exc}") from exc
+
+    try:
+        payload = cv_response.json()
+    except ValueError as exc:
+        raise FaceRegistrationServiceError(
+            f"CV module returned non-JSON response (status {cv_response.status_code})"
+        ) from exc
+
+    if cv_response.status_code >= 400:
+        error_text = payload.get('error') if isinstance(payload, dict) else str(payload)
+        raise FaceRegistrationServiceError(
+            f"CV module registration failed ({cv_response.status_code}): {error_text}"
+        )
+
+    if not isinstance(payload, dict):
+        raise FaceRegistrationServiceError("CV module response must be a JSON object")
+
+    return payload
+
+
+def persist_user_face_embedding(user, cv_payload):
+    """
+    Store face embedding returned by CV module against Django auth user.
+    """
+    embedding = (
+        cv_payload.get('embedding')
+        or cv_payload.get('embeddings')
+        or cv_payload.get('face_embedding')
+    )
+
+    if embedding is None:
+        raise FaceRegistrationServiceError(
+            "CV module did not return an embedding payload"
+        )
+
+    profile, _ = UserFaceEmbedding.objects.update_or_create(
+        user=user,
+        defaults={
+            'embedding': embedding,
+            'cv_response': cv_payload,
+        },
+    )
+    return profile
+
+
+def verify_face_with_cv_module(uploaded_file, stored_embedding):
+    """
+    Call CV /verify endpoint with a live image and stored embedding.
+    """
+    if uploaded_file is None:
+        raise FaceRegistrationServiceError("Face image file is required")
+    if not stored_embedding:
+        raise FaceRegistrationServiceError("No stored embedding found for user")
+
+    verify_url = getattr(settings, 'CV_MODULE_VERIFY_URL', '').strip()
+    timeout_seconds = float(getattr(settings, 'CV_MODULE_TIMEOUT_SECONDS', 10))
+    if not verify_url:
+        raise FaceRegistrationServiceError("CV_MODULE_VERIFY_URL is not configured")
+
+    uploaded_file.seek(0)
+    content_type = getattr(uploaded_file, 'content_type', None) or 'application/octet-stream'
+    files = {'file': (uploaded_file.name, uploaded_file.read(), content_type)}
+    data = {'stored_embedding': json.dumps(stored_embedding)}
+
+    try:
+        cv_response = requests.post(
+            verify_url,
+            files=files,
+            data=data,
+            timeout=timeout_seconds,
+        )
+    except requests.RequestException as exc:
+        raise FaceRegistrationServiceError(f"CV verify call failed: {exc}") from exc
+
+    try:
+        payload = cv_response.json()
+    except ValueError as exc:
+        raise FaceRegistrationServiceError(
+            f"CV module returned non-JSON response (status {cv_response.status_code})"
+        ) from exc
+
+    if cv_response.status_code >= 400:
+        error_text = payload.get('error') if isinstance(payload, dict) else str(payload)
+        raise FaceRegistrationServiceError(
+            f"CV module verification failed ({cv_response.status_code}): {error_text}"
+        )
+
+    if not isinstance(payload, dict):
+        raise FaceRegistrationServiceError("CV module verify response must be a JSON object")
+
+    return payload
 
 class UnifiedLoginView(APIView):
     """
@@ -189,10 +316,17 @@ class UnifiedSignupView(APIView):
         name = request.data.get('name', '').strip()
         email = request.data.get('email', '').strip()
         password = request.data.get('password', '')
+        face_image = request.FILES.get('face_image') or request.FILES.get('file')
 
         if not role or not name or not email or not password:
             return Response(
                 {'error': 'role, name, email and password are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if face_image is None:
+            return Response(
+                {'error': 'face_image file is required for signup'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -235,16 +369,28 @@ class UnifiedSignupView(APIView):
         user = User.objects.create_user(username=email, email=email, password=password)
 
         try:
+            registration_response = None
             if role == 'student':
-                return self._register_student(request, user, name, email, management)
+                registration_response = self._register_student(request, user, name, email, management)
             elif role == 'teacher':
-                return self._register_teacher(request, user, name, email, management)
+                registration_response = self._register_teacher(request, user, name, email, management)
             elif role in ('advisor', 'eventadmin', 'event_admin'):
-                return self._register_event_advisor(request, user, name, email)
+                registration_response = self._register_event_advisor(request, user, name, email)
             elif role == 'participant':
-                return self._register_participant(request, user, name, email)
+                registration_response = self._register_participant(request, user, name, email)
             else:  # admin / management / orgadmin
-                return self._register_management(request, user, name, email)
+                registration_response = self._register_management(request, user, name, email)
+
+            cv_payload = register_face_with_cv_module(user.id, face_image)
+            persist_user_face_embedding(user, cv_payload)
+
+            if isinstance(registration_response.data, dict):
+                registration_response.data['face'] = {
+                    'registered': True,
+                    'message': cv_payload.get('message', 'Face registered successfully'),
+                }
+
+            return registration_response
         except Exception as e:
             user.delete()
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -259,6 +405,14 @@ class UnifiedSignupView(APIView):
         parsed_courses = []
         if not courses_raw:
             return parsed_courses
+
+        if isinstance(courses_raw, str):
+            raw = courses_raw.strip()
+            if raw.startswith('[') or raw.startswith('{'):
+                try:
+                    courses_raw = json.loads(raw)
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    courses_raw = courses_raw
 
         if isinstance(courses_raw, list):
             for item in courses_raw:
@@ -651,6 +805,88 @@ class UnifiedSignupView(APIView):
             'name': participant.display_name,
             'email': email,
         }, status=status.HTTP_201_CREATED)
+
+
+class FaceRegisterView(APIView):
+    """
+    Proxy endpoint to register one face with the external CV module and
+    persist embedding against a local auth user.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        user_id = request.data.get('user_id')
+        face_image = request.FILES.get('face_image') or request.FILES.get('file')
+
+        if not user_id:
+            return Response({'error': 'user_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        if face_image is None:
+            return Response({'error': 'face_image file is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = User.objects.filter(id=user_id).first()
+        if user is None:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            cv_payload = register_face_with_cv_module(user.id, face_image)
+            profile = persist_user_face_embedding(user, cv_payload)
+        except FaceRegistrationServiceError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            return Response({'error': f'Face registration failed: {exc}'}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(
+            {
+                'message': cv_payload.get('message', 'Face registered successfully'),
+                'embedding_saved': True,
+                'user_id': user.id,
+                'embedding_profile_id': profile.id,
+                'cv_response': cv_payload,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class FaceVerifyView(APIView):
+    """
+    Proxy endpoint to verify a live face image against stored embedding.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        user_id = request.data.get('user_id')
+        face_image = request.FILES.get('face_image') or request.FILES.get('file')
+
+        if not user_id:
+            return Response({'error': 'user_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        if face_image is None:
+            return Response({'error': 'face_image file is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = User.objects.filter(id=user_id).first()
+        if user is None:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        profile = UserFaceEmbedding.objects.filter(user=user).first()
+        if profile is None or not profile.embedding:
+            return Response({'error': 'No stored embedding found for this user'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            cv_payload = verify_face_with_cv_module(face_image, profile.embedding)
+        except FaceRegistrationServiceError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            return Response({'error': f'Face verification failed: {exc}'}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(
+            {
+                'message': 'Face verified' if cv_payload.get('is_match') else 'Face does not match',
+                'user_id': user.id,
+                'is_match': bool(cv_payload.get('is_match')),
+                'similarity_score': cv_payload.get('similarity_score'),
+                'cv_response': cv_payload,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class UserDetailsView(APIView):
