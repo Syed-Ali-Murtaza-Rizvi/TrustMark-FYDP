@@ -14,7 +14,7 @@ from rest_framework import status, generics, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
@@ -47,10 +47,9 @@ from .serializers import (
 )
 from .models import (
     Student, Teacher, Management, StudentCourse, TaughtCourse, Course, Class,
-    UpdateAttendanceRequest, AttendanceSession, AttendanceRecord, UserFaceEmbedding
+    UpdateAttendanceRequest, AttendanceSession, AttendanceRecord, UserFaceEmbedding,
 )
 from events.models import EventParticipant, EventAdvisor
-
 
 # ============ Unified Frontend-Compatible Endpoints ============
 
