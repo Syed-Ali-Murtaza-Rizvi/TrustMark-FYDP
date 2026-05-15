@@ -85,7 +85,7 @@ const EventDetailModal = ({ event, onClose }) => {
   );
 };
 
-const FaceVerifyModal = ({ eventTitle, onClose, onSubmit, submitting }) => {
+const FaceVerifyModal = ({ eventTitle, onClose, onSubmit, submitting, isRegistration = false }) => {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const [capturedBlob, setCapturedBlob] = useState(null);
@@ -163,11 +163,11 @@ const FaceVerifyModal = ({ eventTitle, onClose, onSubmit, submitting }) => {
       <div className="pqr-upload-modal" onClick={(e) => e.stopPropagation()}>
         <div className="pqr-modal-header">
           <Camera size={20} color="#2c5f9e" />
-          <span>Live Face Verification</span>
+          <span>{isRegistration ? 'Register Your Face' : 'Live Face Verification'}</span>
           <button className="pqr-close-btn" onClick={onClose}><X size={18} /></button>
         </div>
         <p className="pqr-modal-subtitle">Event: <strong>{eventTitle}</strong></p>
-        <p className="pqr-modal-hint">Capture a live photo to verify attendance.</p>
+        <p className="pqr-modal-hint">{isRegistration ? 'Capture a live photo to register your face for this event.' : 'Capture a live photo to verify attendance.'}</p>
 
         {!preview ? (
           <video
@@ -193,7 +193,7 @@ const FaceVerifyModal = ({ eventTitle, onClose, onSubmit, submitting }) => {
                 <RefreshCw size={14} /> Retake
               </button>
               <button className="pqr-submit-btn" onClick={submit} disabled={submitting}>
-                {submitting ? "Verifying..." : "Verify & Mark"}
+                {submitting ? (isRegistration ? "Registering..." : "Verifying...") : (isRegistration ? "Register Face" : "Verify & Mark")}
               </button>
             </>
           )}
@@ -226,6 +226,8 @@ const ParticipantDashboard = () => {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [scanningEvent, setScanningEvent] = useState(null);
   const [verifyContext, setVerifyContext] = useState(null);
+  const [registerFaceContext, setRegisterFaceContext] = useState(null);
+  const [registeringFace, setRegisteringFace] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [participantData, setParticipantData] = useState({
     profile: { name: "", email: "", phone: "" },
@@ -266,6 +268,28 @@ const ParticipantDashboard = () => {
         });
       } catch {
         localStorage.removeItem("pendingAttendanceToken");
+      }
+    };
+
+    loadPendingContext();
+  }, []);
+
+  useEffect(() => {
+    const pendingToken = (localStorage.getItem("pendingFaceRegistration") || "").trim();
+    if (!pendingToken) return;
+
+    const loadPendingContext = async () => {
+      try {
+        const { data } = await axiosInstance.get(
+          `/api/events/register-by-link/${encodeURIComponent(pendingToken)}/`
+        );
+        setRegisterFaceContext({
+          token: pendingToken,
+          eventId: data?.eventId,
+          title: data?.title || "Event Registration",
+        });
+      } catch {
+        localStorage.removeItem("pendingFaceRegistration");
       }
     };
 
@@ -364,6 +388,32 @@ const ParticipantDashboard = () => {
     }
   };
 
+  const handleFaceRegisterSubmit = async (imageBlob) => {
+    if (!registerFaceContext?.token) return;
+    setRegisteringFace(true);
+    try {
+      const formData = new FormData();
+      formData.append("face_image", imageBlob, "live-face.jpg");
+      formData.append("event_token", registerFaceContext.token);
+
+      const { data } = await axiosInstance.post(
+        "/api/events/register-face/",
+        formData
+      );
+
+      alert(data?.message || "Face registered successfully!");
+      localStorage.removeItem("pendingFaceRegistration");
+      setRegisterFaceContext(null);
+      await fetchDashboard();
+    } catch (error) {
+      const apiError = error?.response?.data;
+      const message = apiError ? Object.values(apiError).flat().join(" ") : "";
+      alert(message || "Face registration failed. Please try again.");
+    } finally {
+      setRegisteringFace(false);
+    }
+  };
+
   return (
     <div className="participant-page">
       <aside className="participant-profile-card">
@@ -457,6 +507,19 @@ const ParticipantDashboard = () => {
           onClose={() => setVerifyContext(null)}
           onSubmit={handleFaceVerifySubmit}
           submitting={verifying}
+        />
+      )}
+
+      {registerFaceContext && (
+        <FaceVerifyModal
+          eventTitle={registerFaceContext.title}
+          onClose={() => {
+            localStorage.removeItem("pendingFaceRegistration");
+            setRegisterFaceContext(null);
+          }}
+          onSubmit={handleFaceRegisterSubmit}
+          submitting={registeringFace}
+          isRegistration={true}
         />
       )}
     </div>

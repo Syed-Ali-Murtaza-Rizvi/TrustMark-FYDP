@@ -13,6 +13,7 @@ import requests
 
 from .models import Event, Registration, Attendance, EventParticipant
 from core.models import UserFaceEmbedding
+from core.views import register_face_with_cv_module, FaceRegistrationServiceError
 from .serializers import (
     EventSerializer,
     RegistrationSerializer,
@@ -414,3 +415,109 @@ def attendance_qr_redirect(request, token):
     """Handle attendance QR links by redirecting to frontend login."""
     frontend_base = getattr(settings, 'FRONTEND_BASE_URL', 'http://localhost:5173').rstrip('/')
     return redirect(f"{frontend_base}/login?attendanceToken={token}")
+
+
+class RegisterFaceForEventView(APIView):
+    """
+    Endpoint to register face for a participant after event registration.
+    
+    POST /api/events/register-face/
+    Request: { "registration_id": int, "face_image": file }
+    OR: { "event_token": "token", "face_image": file }
+    
+    The user must be authenticated and be the participant who registered for the event.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        registration_id = request.data.get('registration_id')
+        event_token = request.data.get('event_token')
+        face_image = request.FILES.get('face_image') or request.FILES.get('file')
+
+        if face_image is None:
+            return Response(
+                {'error': 'face_image file is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Find registration
+        registration = None
+        if registration_id:
+            try:
+                registration = Registration.objects.get(
+                    id=registration_id,
+                    user=request.user
+                )
+            except Registration.DoesNotExist:
+                return Response(
+                    {'error': 'Registration not found or you are not the participant'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        elif event_token:
+            event = _event_from_registration_token(event_token)
+            if not event:
+                return Response(
+                    {'error': 'Invalid event token'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            registration = Registration.objects.filter(
+                user=request.user,
+                event=event
+            ).first()
+            if not registration:
+                return Response(
+                    {'error': 'You are not registered for this event'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            return Response(
+                {'error': 'registration_id or event_token is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Check if already has face embedding
+        if registration.face_embedding:
+            return Response(
+                {'error': 'Face already registered for this event'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Call CV module to register face
+        try:
+            cv_payload = register_face_with_cv_module(request.user.id, face_image)
+        except FaceRegistrationServiceError as exc:
+            return Response(
+                {'error': f'Face registration failed: {exc}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as exc:
+            return Response(
+                {'error': f'Face registration failed: {exc}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        embedding = (
+            cv_payload.get('embedding')
+            or cv_payload.get('embeddings')
+            or cv_payload.get('face_embedding')
+        )
+
+        if embedding is None:
+            return Response(
+                {'error': 'CV module did not return an embedding'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Save embedding to registration
+        registration.face_embedding = embedding
+        registration.save(update_fields=['face_embedding'])
+
+        return Response(
+            {
+                'message': cv_payload.get('message', 'Face registered successfully for event'),
+                'registration_id': registration.id,
+                'event_id': registration.event.id,
+                'event_title': registration.event.title,
+            },
+            status=status.HTTP_200_OK
+        )

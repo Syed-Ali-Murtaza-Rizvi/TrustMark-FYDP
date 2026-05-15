@@ -93,6 +93,7 @@ class Registration(models.Model):
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='registrations')
     registered_at = models.DateTimeField(auto_now_add=True)
     attended = models.BooleanField(default=False)
+    face_embedding = models.JSONField(default=list, blank=True)
 
     class Meta:
         unique_together = ('user', 'event')

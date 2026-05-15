@@ -323,12 +323,6 @@ class UnifiedSignupView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if face_image is None:
-            return Response(
-                {'error': 'face_image file is required for signup'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
         if role not in ('student', 'teacher', 'admin', 'management', 'orgadmin', 'advisor', 'eventadmin', 'event_admin', 'participant'):
             return Response(
                 {'error': 'Invalid role. Must be one of: student, teacher, admin, management, advisor, eventadmin, participant'},
@@ -380,14 +374,15 @@ class UnifiedSignupView(APIView):
             else:  # admin / management / orgadmin
                 registration_response = self._register_management(request, user, name, email)
 
-            cv_payload = register_face_with_cv_module(user.id, face_image)
-            persist_user_face_embedding(user, cv_payload)
+            if face_image is not None:
+                cv_payload = register_face_with_cv_module(user.id, face_image)
+                persist_user_face_embedding(user, cv_payload)
 
-            if isinstance(registration_response.data, dict):
-                registration_response.data['face'] = {
-                    'registered': True,
-                    'message': cv_payload.get('message', 'Face registered successfully'),
-                }
+                if isinstance(registration_response.data, dict):
+                    registration_response.data['face'] = {
+                        'registered': True,
+                        'message': cv_payload.get('message', 'Face registered successfully'),
+                    }
 
             return registration_response
         except Exception as e:

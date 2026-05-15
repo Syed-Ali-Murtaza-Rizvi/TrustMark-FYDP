@@ -17,14 +17,13 @@ const Signup = () => {
     password: "",
     confirmPassword: "",
     organization: "",
-    faceImage: null,
   });
 
   const handleChange = (e) => {
-    const { name, value, files } = e.target;
+    const { name, value } = e.target;
     setForm({
       ...form,
-      [name]: name === "faceImage" ? (files?.[0] || null) : value,
+      [name]: value,
     });
     setError("");
   };
@@ -34,10 +33,6 @@ const Signup = () => {
 
     if (!form.email || !form.password) {
       setError("Please fill in all required fields.");
-      return;
-    }
-    if (!form.faceImage) {
-      setError("Please upload a face image.");
       return;
     }
 
@@ -74,7 +69,6 @@ const Signup = () => {
     payload.append("email", form.email);
     payload.append("password", form.password);
     payload.append("organization", form.organization || "");
-    payload.append("face_image", form.faceImage);
 
     try {
       setLoading(true);
@@ -183,13 +177,6 @@ const Signup = () => {
               name="password"
               placeholder="Password"
               value={form.password}
-              onChange={handleChange}
-            />
-
-            <input
-              type="file"
-              name="faceImage"
-              accept="image/*"
               onChange={handleChange}
             />
 

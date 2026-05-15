@@ -48,8 +48,30 @@ export default function EventAdminDashboard() {
       alert("This event is closed. Past events cannot be shared.");
       return;
     }
-    navigator.clipboard?.writeText(ev.registrationLink);
-    alert("Link copied to clipboard");
+    
+    // Fallback for non-secure contexts (HTTP + IP address)
+    const link = ev.registrationLink;
+    if (navigator.clipboard && window.location.protocol === 'https:') {
+      navigator.clipboard.writeText(link).then(() => {
+        alert("Link copied to clipboard");
+      });
+    } else {
+      // Fallback for HTTP or IP address access
+      const textArea = document.createElement("textarea");
+      textArea.value = link;
+      textArea.style.position = "fixed";
+      textArea.style.left = "-9999px";
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand("copy");
+        alert("Link copied to clipboard");
+      } catch (err) {
+        // Last resort - show the link so user can copy manually
+        prompt("Copy this registration link:", link);
+      }
+      document.body.removeChild(textArea);
+    }
   };
 
   return (

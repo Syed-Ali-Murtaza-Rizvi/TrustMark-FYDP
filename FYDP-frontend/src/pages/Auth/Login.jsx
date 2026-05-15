@@ -42,12 +42,17 @@ const Login = () => {
     if (!pendingToken) return;
 
     try {
-      await axios.post(
+      const response = await axios.post(
         `/api/events/register-by-link/${encodeURIComponent(pendingToken)}/`,
         {},
         { headers: { Authorization: `Bearer ${accessToken}` } }
       );
       localStorage.removeItem("pendingEventToken");
+      
+      // Store the event token and flag to trigger face registration after redirect
+      if (response.data?.registrationId) {
+        localStorage.setItem("pendingFaceRegistration", pendingToken);
+      }
     } catch (err) {
       const apiError = err.response?.data;
       const message = apiError ? Object.values(apiError).flat().join(" ") : "";

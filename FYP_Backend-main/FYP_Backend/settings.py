@@ -64,6 +64,7 @@ CV_MODULE_TIMEOUT_SECONDS = float(os.environ.get('CV_MODULE_TIMEOUT_SECONDS', '1
 _default_cors_origins = [
     'http://localhost:5173',
     'http://localhost:3000',
+    
     'http://127.0.0.1:5173',
     'http://127.0.0.1:3000',
 ]

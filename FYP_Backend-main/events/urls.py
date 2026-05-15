@@ -10,6 +10,7 @@ from .views import (
     ParticipantDashboardView,
     EventRegisterByLinkView,
     EventAttendanceByLinkView,
+    RegisterFaceForEventView,
 )
 
 router = DefaultRouter()
@@ -31,4 +32,5 @@ urlpatterns = [
     path('participants/dashboard/', ParticipantDashboardView.as_view(), name='event-participant-dashboard'),
     path('register-by-link/<str:token>/', EventRegisterByLinkView.as_view(), name='event-register-by-link'),
     path('attendance-by-link/<str:token>/', EventAttendanceByLinkView.as_view(), name='event-attendance-by-link'),
+    path('register-face/', RegisterFaceForEventView.as_view(), name='event-register-face'),
 ]
