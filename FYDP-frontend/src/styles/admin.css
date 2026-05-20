@@ -118,14 +118,17 @@ body{
   border-radius:8px;
   font-weight:700;
   margin-bottom:14px;
-  /* width:max-content; */
   width: 100%;
+  flex-wrap: nowrap;
+  overflow: visible;
 }
 
 .section-title-left {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-shrink: 0;
+  min-width: fit-content;
 }
 
 /* ---------- Mini utilities ---------- */
@@ -137,6 +140,25 @@ body{
   font-weight:600;
   margin-left:10px;
   font-size:13px;
+}
+
+/* Badge styling inside section-title */
+.section-title .badge {
+  background-color: #ffffff;
+  border: 2px solid #ffffff;
+  color: #122038;
+  padding: 8px 14px;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 13px;
+  white-space: nowrap;
+  margin: 0;
+  display: inline-block;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  flex-shrink: 0;
+  position: static;
+  width: auto;
+  min-width: fit-content;
 }
 
 /* ---------- Request cards list ---------- */

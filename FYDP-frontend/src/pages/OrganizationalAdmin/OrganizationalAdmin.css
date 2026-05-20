@@ -126,8 +126,16 @@ body.orgadmin-page .admin-page .table-scroll {
   }
 
   body.orgadmin-page .section-title {
-    flex-wrap: wrap;
-    gap: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: nowrap;
+  }
+
+  body.orgadmin-page .section-title .badge {
+    flex-shrink: 0;
+    width: auto;
+    min-width: fit-content;
   }
 
   body.orgadmin-page .request-card {

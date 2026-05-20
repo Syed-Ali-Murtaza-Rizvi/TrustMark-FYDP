@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from "react";
 import {
   User,
   Mail,
-  Phone,
   MapPin,
   CalendarDays,
   Eye,
@@ -230,7 +229,7 @@ const ParticipantDashboard = () => {
   const [registeringFace, setRegisteringFace] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [participantData, setParticipantData] = useState({
-    profile: { name: "", email: "", phone: "" },
+    profile: { name: "", email: "" },
     upcomingEvents: [],
     pastEvents: [],
   });
@@ -240,7 +239,7 @@ const ParticipantDashboard = () => {
     try {
       const { data } = await axiosInstance.get("/api/events/participants/dashboard/");
       setParticipantData({
-        profile: data?.profile || { name: "", email: "", phone: "" },
+        profile: data?.profile || { name: "", email: "" },
         upcomingEvents: Array.isArray(data?.upcomingEvents) ? data.upcomingEvents : [],
         pastEvents: Array.isArray(data?.pastEvents) ? data.pastEvents : [],
       });
@@ -429,11 +428,6 @@ const ParticipantDashboard = () => {
           <div className="participant-profile-detail">
             <Mail size={13} />
             {profile.email}
-          </div>
-
-          <div className="participant-profile-detail">
-            <Phone size={13} />
-            {profile.phone}
           </div>
         </div>
       </aside>

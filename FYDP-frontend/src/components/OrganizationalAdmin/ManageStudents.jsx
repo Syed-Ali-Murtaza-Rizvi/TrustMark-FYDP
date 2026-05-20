@@ -56,8 +56,26 @@ const ManageStudents = ({ years, programs, onRegister }) => {
     courses: ""
   });
 
+  // 🔹 State for total students count from API
+  const [totalStudents, setTotalStudents] = useState(0);
+
   // 🔹 Read students from localStorage
   const allStudents = JSON.parse(localStorage.getItem("students")) || [];
+
+  // 🔹 Fetch total students count from API on component mount
+  useEffect(() => {
+    const fetchTotalStudents = async () => {
+      try {
+        const { data } = await axios.get("/api/students/");
+        const count = Array.isArray(data) ? data.length : (data.count || 0);
+        setTotalStudents(count);
+      } catch (err) {
+        console.error("Failed to fetch total students count", err);
+        setTotalStudents(allStudents.length);
+      }
+    };
+    fetchTotalStudents();
+  }, []);
 
   // Handle form input change
   const handleChange = (e) => {
@@ -304,7 +322,7 @@ const ManageStudents = ({ years, programs, onRegister }) => {
           <GraduationCap size={20} />
           <span>Manage Students</span>
         </span>
-        <span className="badge">{allStudents.length} Total Students</span>
+        <span className="badge">{totalStudents} Total Students</span>
       </div>
 
       {/* REGISTER & BULK UPDATE BUTTONS */}
