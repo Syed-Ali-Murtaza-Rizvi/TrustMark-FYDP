@@ -7,6 +7,7 @@ import TeacherDashboard from '../pages/Teacher/TeacherDashboard'
 import OrganizationalAdminDashboard from '../pages/OrganizationalAdmin/OrganizationalAdminDashboard'
 import EventAdminDashboard from '../pages/EventAdminDashboard'
 import Signup from '../pages/Auth/SignUp'
+import AdminDashboard from '../pages/AdminDashboard'
 import ParticipantDashboard from '../pages/Participant/ParticipantDashboard'
 import Home from '../pages/landing/Main'
 
@@ -31,6 +32,7 @@ const router = createBrowserRouter([
             { path: "forgot-password", element: <Navigate to="/login" replace /> },
             { path: "student", element: <StudentDashboard/> },
             { path: "teacher", element: <TeacherDashboard/> },
+            { path: "admin", element: <AdminDashboard/> },
             {path:"eventadmin",element:<EventAdminDashboard/>},
             {path:"signup",element:<Signup/>},
             {path:"orgadmin",element:<OrganizationalAdminDashboard/>},

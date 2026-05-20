@@ -196,31 +196,31 @@ const TeacherDashboard = () => {
         return;
       }
 
-      let location = geoLocation;
-      if (location.lat == null || location.lng == null) {
-        location = await getCurrentLocation();
-        setGeoLocation(location);
-      }
-
-      const payload = {
+      // Step 1: Create the attendance session
+      const createSessionPayload = {
         teacher: authTeacherId,
-        // Use only one course field in payload: numeric course id.
         course: Number(selectedCourseObj.courseId),
-        attendance_type: mapAttendanceTypeForApi(selectedType),
-        program: selectedProgram,
         section: selectedSection,
         year: Number(selectedBatch),
         slot_count: Number(selectedSlots),
-        latitude: location.lat,
-        longitude: location.lng,
-        radius_meters: 50,
       };
 
-      const { data } = await axiosInstance.post("/api/attendance-sessions/generate-qr/", payload);
+      const { data: sessionData } = await axiosInstance.post("/api/attendance-sessions/", createSessionPayload);
+      const sessionId = sessionData.id || sessionData.session?.id;
 
-      setQrCodeImage(data.qr_code || "");
-      setQrToken(data.qr_token || "");
-      setActiveSession(data.session || null);
+      if (!sessionId) {
+        setQrApiError("Session created but no ID returned from server.");
+        return;
+      }
+
+      // Step 2: Fetch the QR code for the created session
+      const { data: qrData } = await axiosInstance.get(`/api/attendance-sessions/${sessionId}/qr/`);
+
+      setQrCodeImage(qrData.qr_code || "");
+      setQrToken(qrData.qr_token || "");
+      // Normalize active session so callers can rely on `activeSession.id`
+      const normalizedSession = sessionData.session ? { ...sessionData.session, id: sessionId } : { ...sessionData, id: sessionId };
+      setActiveSession(normalizedSession);
       setState("active");
     } catch (err) {
       const result = err.response?.data;

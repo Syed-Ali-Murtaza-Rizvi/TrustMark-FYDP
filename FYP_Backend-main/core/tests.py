@@ -1059,6 +1059,71 @@ class AttendanceSessionTestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['session']['status'], 'stopped')
         self.assertIsNotNone(response.data['session']['stopped_at'])
+
+    def test_stop_attendance_session_marks_absent_students(self):
+        """Stopping a session should increment absent counts for students who did not attend."""
+        student1 = Student.objects.create(
+            student_name='Student 1',
+            email='student1@test.com',
+            student_rollNo='RFID101',
+            year=1,
+            dept='CS',
+            section='A',
+            management=self.teacher.management,
+        )
+        student2 = Student.objects.create(
+            student_name='Student 2',
+            email='student2@test.com',
+            student_rollNo='RFID102',
+            year=1,
+            dept='CS',
+            section='A',
+            management=self.teacher.management,
+        )
+
+        present_course = StudentCourse.objects.create(
+            student=student1,
+            course=self.course,
+            teacher=self.teacher,
+            classes_attended_count=2,
+            classes_absent_count=1,
+        )
+        absent_course = StudentCourse.objects.create(
+            student=student2,
+            course=self.course,
+            teacher=self.teacher,
+            classes_attended_count=0,
+            classes_absent_count=0,
+        )
+
+        session = AttendanceSession.objects.create(
+            teacher=self.teacher,
+            course=self.course,
+            section='A',
+            year=1,
+            slot_count=2,
+            qr_code_token='test_token_absent',
+            status='active'
+        )
+
+        AttendanceRecord.objects.create(
+            session=session,
+            student=student1,
+            rfid_scanned=True,
+            qr_scanned=True,
+            is_present=True,
+        )
+
+        stop_url = reverse('attendancesession-stop', args=[session.id])
+        response = self.client.post(stop_url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        present_course.refresh_from_db()
+        absent_course.refresh_from_db()
+
+        self.assertEqual(present_course.classes_absent_count, 1)
+        self.assertEqual(absent_course.classes_absent_count, 2)
     
     def test_cannot_stop_already_stopped_session(self):
         """Test that already stopped sessions cannot be stopped again"""

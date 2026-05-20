@@ -17,7 +17,7 @@ class StudentCourseInlineSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = StudentCourse
-        fields = ['id', 'course_id', 'course_code', 'course_name', 'classes_attended_count']
+        fields = ['id', 'course_id', 'course_code', 'course_name', 'classes_attended_count', 'classes_absent_count']
 
 
 class StudentSerializer(serializers.ModelSerializer):
@@ -94,7 +94,7 @@ class StudentCourseSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = StudentCourse
-        fields = ['id', 'student', 'course', 'teacher', 'student_name', 'course_name', 'teacher_name', 'classes_attended_count']
+        fields = ['id', 'student', 'course', 'teacher', 'student_name', 'course_name', 'teacher_name', 'classes_attended_count', 'classes_absent_count']
         read_only_fields = ['id']
 
 

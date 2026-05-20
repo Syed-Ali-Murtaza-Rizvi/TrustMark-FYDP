@@ -90,6 +90,7 @@ class StudentCourse(models.Model):
     course = models.ForeignKey('Course', on_delete=models.CASCADE, related_name='student_courses')
     teacher = models.ForeignKey('Teacher', on_delete=models.SET_NULL, null=True, blank=True, related_name='student_courses')
     classes_attended_count = models.PositiveIntegerField(default=0)
+    classes_absent_count = models.PositiveIntegerField(default=0)
 
     def __str__(self):
         return f"{self.student} - {self.course} - {self.teacher}"

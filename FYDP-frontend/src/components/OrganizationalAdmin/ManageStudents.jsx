@@ -30,8 +30,7 @@ const ManageStudents = ({ years, programs, onRegister }) => {
     section: "",
     email: "",
     password: "",
-    courses: "",
-    faceImage: null,
+    courses: ""
   });
 
   const [loading, setLoading] = useState(false);
@@ -62,13 +61,8 @@ const ManageStudents = ({ years, programs, onRegister }) => {
 
   // Handle form input change
   const handleChange = (e) => {
-    const { name, value, files } = e.target;
-    const nextValue =
-      name === "faceImage"
-        ? (files?.[0] || null)
-        : name === "courses"
-          ? normalizeCourseCodesInput(value)
-          : value;
+    const { name, value } = e.target;
+    const nextValue = name === "courses" ? normalizeCourseCodesInput(value) : value;
     setForm({ ...form, [name]: nextValue });
   };
 
@@ -108,10 +102,6 @@ const ManageStudents = ({ years, programs, onRegister }) => {
       setRegisterError("Name, Email, and Password are required");
       return;
     }
-    if (!form.faceImage) {
-      setRegisterError("Face image is required.");
-      return;
-    }
 
     const courseCodes = parseCourseCodes(form.courses);
     if (!courseCodes.length) {
@@ -123,22 +113,22 @@ const ManageStudents = ({ years, programs, onRegister }) => {
     setRegisterError("");
 
     try {
-      const payload = new FormData();
-      payload.append("role", "student");
-      payload.append("name", form.name);
-      payload.append("email", form.email);
-      payload.append("password", form.password);
-      if (form.id) payload.append("id", form.id);
-      if (form.year) payload.append("year", Number.isNaN(Number(form.year)) ? form.year : Number(form.year));
-      if (form.program) payload.append("program", form.program);
-      if (form.section) payload.append("section", form.section);
-      payload.append("courses", courseCodes.join(","));
-      payload.append("face_image", form.faceImage);
+      const payload = {
+        role: "student",
+        name: form.name,
+        email: form.email,
+        password: form.password,
+        ...(form.id && { id: form.id }),
+        ...(form.year && { year: Number.isNaN(Number(form.year)) ? form.year : Number(form.year) }),
+        ...(form.program && { program: form.program }),
+        ...(form.section && { section: form.section }),
+        courses: courseCodes,
+      };
 
       const { data } = await axios.post("/api/signup", payload);
 
       alert(`Student "${data.name}" registered successfully!`);
-      setForm({ name: "", id: "", year: "", program: "", section: "", email: "", password: "", courses: "", faceImage: null });
+      setForm({ name: "", id: "", year: "", program: "", section: "", email: "", password: "", courses: "" });
       if (onRegister) onRegister(data);
     } catch (err) {
       const message = err.response?.data?.message || "Network error. Please try again.";
@@ -331,7 +321,6 @@ const ManageStudents = ({ years, programs, onRegister }) => {
           <input name="name" placeholder="Full Name *" value={form.name} onChange={handleChange} />
           <input name="email" placeholder="Email *" value={form.email} onChange={handleChange} />
           <input name="password" type="password" placeholder="Password *" value={form.password} onChange={handleChange} />
-          <input name="faceImage" type="file" accept="image/*" onChange={handleChange} />
           <input name="id" placeholder="Roll No / RFID" value={form.id} onChange={handleChange} />
           <input name="year" placeholder="Year (e.g. 2)" value={form.year} onChange={handleChange} />
           <input name="program" placeholder="Program / Department" value={form.program} onChange={handleChange} />

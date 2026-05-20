@@ -1281,6 +1281,9 @@ class TeacherViewSet(viewsets.ModelViewSet):
         else:
             management = _get_management_for_user(self.request.user)
             if not management:
+                teacher = _get_teacher_for_user(self.request.user)
+                if teacher:
+                    return queryset.filter(teacher_id=teacher.teacher_id)
                 return queryset.none()
 
         # Scope to the logged-in management's teachers
@@ -1978,6 +1981,32 @@ class AttendanceSessionViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    def _mark_absent_students_for_session(self, session):
+        """Increment absent counts for enrolled students who did not mark present."""
+        present_student_ids = set(
+            AttendanceRecord.objects.filter(session=session, is_present=True)
+            .values_list('student_id', flat=True)
+        )
+
+        student_courses = StudentCourse.objects.filter(course=session.course, teacher=session.teacher)
+        if session.teacher.management_id:
+            student_courses = student_courses.filter(student__management=session.teacher.management)
+
+        absent_student_courses = [
+            student_course
+            for student_course in student_courses.select_related('student')
+            if student_course.student_id not in present_student_ids
+        ]
+
+        if not absent_student_courses:
+            return
+
+        slot_count = max(1, int(getattr(session, 'slot_count', 1) or 1))
+        for student_course in absent_student_courses:
+            student_course.classes_absent_count = (student_course.classes_absent_count or 0) + slot_count
+
+        StudentCourse.objects.bulk_update(absent_student_courses, ['classes_absent_count'])
+
     @action(detail=True, methods=['post'])
     def stop(self, request, pk=None):
         """Stop an active attendance session"""
@@ -1998,6 +2027,7 @@ class AttendanceSessionViewSet(viewsets.ModelViewSet):
         session.status = 'stopped'
         session.stopped_at = timezone.now()
         session.save()
+        self._mark_absent_students_for_session(session)
 
         serializer = self.get_serializer(session)
         return Response({
