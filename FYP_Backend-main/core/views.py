@@ -1803,16 +1803,51 @@ class UpdateAttendanceRequestViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
-        """Auto-set management from the teacher's management on create"""
+        """Auto-set teacher and management on create"""
         teacher = serializer.validated_data.get('teacher')
-        management = teacher.management if teacher else None
+        
         if not self.request.user.is_superuser:
             current_management = _get_management_for_user(self.request.user)
-            if not current_management:
-                raise DRFValidationError({'error': 'Only management users can create attendance requests'})
-            if not management or management.Management_id != current_management.Management_id:
-                raise DRFValidationError({'error': 'Teacher does not belong to your management'})
-        serializer.save(management=management)
+            current_teacher = _get_teacher_for_user(self.request.user)
+            
+            # User must be either management or teacher
+            if not current_management and not current_teacher:
+                raise DRFValidationError({'error': 'Only management or teacher users can create attendance requests'})
+            
+            # If teacher user: always set teacher to current user, no inference needed
+            if current_teacher:
+                if teacher and teacher.teacher_id != current_teacher.teacher_id:
+                    raise DRFValidationError({'error': 'You can only create requests as yourself, not as another teacher'})
+                teacher = current_teacher
+                management = teacher.management
+            
+            # If management user: infer teacher from flexible mode if needed
+            elif current_management:
+                # Try to infer teacher from course_code + section if not provided
+                if not teacher and 'course' in serializer.validated_data:
+                    course_code = self.request.data.get('course_code')
+                    section = self.request.data.get('section')
+                    
+                    if course_code and section:
+                        course = serializer.validated_data.get('course')
+                        taught_course = TaughtCourse.objects.filter(
+                            course=course,
+                            section=section
+                        ).first()
+                        if taught_course:
+                            teacher = taught_course.teacher
+                
+                if not teacher:
+                    raise DRFValidationError({'error': 'teacher_rollNo is required for management users'})
+                management = teacher.management
+                if management.Management_id != current_management.Management_id:
+                    raise DRFValidationError({'error': 'Teacher does not belong to your management'})
+        else:
+            # Superuser: no permission checks
+            management = teacher.management if teacher else None
+        
+        # Pass both teacher and management to save
+        serializer.save(teacher=teacher, management=management)
 
     def _process_request(self, request, pk, approve):
         """Helper method to approve or reject a request"""

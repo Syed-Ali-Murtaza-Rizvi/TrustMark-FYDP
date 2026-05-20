@@ -99,19 +99,41 @@ class StudentCourseSerializer(serializers.ModelSerializer):
 
 
 class UpdateAttendanceRequestSerializer(serializers.ModelSerializer):
-    """Serializer for UpdateAttendanceRequest model CRUD operations"""
+    """Serializer for UpdateAttendanceRequest model CRUD operations
+    
+    Supports two input modes:
+    1. Standard: teacher_rollNo + course + classes_to_add
+    2. Flexible: course_code + slot_count (infers teacher and student)
+    """
     teacher = serializers.PrimaryKeyRelatedField(read_only=True)
     student = serializers.PrimaryKeyRelatedField(read_only=True)
     teacher_rollNo = serializers.SlugRelatedField(
         source='teacher',
         slug_field='teacher_rollNo',
         queryset=Teacher.objects.all(),
+        required=False,  # Changed to False - will be set by perform_create
+        allow_null=True,
     )
     student_rollNo = serializers.SlugRelatedField(
         source='student',
         slug_field='student_rollNo',
         queryset=Student.objects.all(),
     )
+    
+    # Make course and classes_to_add optional to support flexible input
+    course = serializers.PrimaryKeyRelatedField(
+        queryset=Course.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+    classes_to_add = serializers.CharField(required=False, allow_blank=True)
+    
+    # Alternative input fields for flexible API
+    course_code = serializers.CharField(required=False, write_only=True)
+    slot_count = serializers.IntegerField(required=False, write_only=True)
+    program = serializers.CharField(required=False, write_only=True)
+    section = serializers.CharField(required=False, write_only=True)
+    
     teacher_name = serializers.CharField(source='teacher.teacher_name', read_only=True)
     student_name = serializers.CharField(source='student.student_name', read_only=True)
     student_dept = serializers.CharField(source='student.dept', read_only=True)
@@ -126,11 +148,64 @@ class UpdateAttendanceRequestSerializer(serializers.ModelSerializer):
             'id', 'teacher', 'student', 'teacher_rollNo', 'student_rollNo',
             'course', 'management', 'classes_to_add', 'reason', 'attendanceType',
             'status', 'requested_at', 'processed_at', 'processed_by',
+            'course_code', 'slot_count', 'program', 'section',
             'teacher_name', 'student_name', 'student_dept', 'student_section', 'course_name', 'processed_by_name', 'management_name'
         ]
         read_only_fields = [
             'id', 'teacher', 'student', 'status', 'requested_at', 'processed_at', 'processed_by', 'management'
         ]
+
+    def validate(self, attrs):
+        """Validate that either standard or flexible input is provided"""
+        # Check if using flexible mode (course_code + slot_count)
+        has_course_code = 'course_code' in self.initial_data
+        has_slot_count = 'slot_count' in self.initial_data
+        has_course = 'course' in self.initial_data and self.initial_data['course'] is not None
+        has_classes = 'classes_to_add' in self.initial_data and self.initial_data['classes_to_add']
+        
+        if has_course_code or has_slot_count:
+            # Flexible mode: require course_code and student_rollNo
+            if not has_course_code:
+                raise serializers.ValidationError("course_code is required when using flexible input mode")
+            if 'student_rollNo' not in self.initial_data:
+                raise serializers.ValidationError("student_rollNo is required")
+                
+            # Resolve course by course_code
+            course_code = self.initial_data.get('course_code')
+            course = Course.objects.filter(course_code=course_code).first()
+            if not course:
+                raise serializers.ValidationError(f"Course with code '{course_code}' not found")
+            
+            attrs['course'] = course
+            
+            # Generate classes_to_add from slot_count if provided
+            if has_slot_count:
+                slot_count = attrs.get('slot_count', 1)
+                classes = [f"Slot {i+1}" for i in range(slot_count)]
+                attrs['classes_to_add'] = ', '.join(classes)
+            else:
+                # If no slot_count, require classes_to_add
+                if not has_classes:
+                    attrs['classes_to_add'] = ''
+        else:
+            # Standard mode: require course (teacher_rollNo is optional - will be set by perform_create)
+            if not has_course:
+                raise serializers.ValidationError("course is required when not using course_code")
+            if not has_classes:
+                raise serializers.ValidationError("classes_to_add is required when not using slot_count")
+        
+        # Remove temporary fields that aren't part of the model
+        attrs.pop('course_code', None)
+        attrs.pop('slot_count', None)
+        attrs.pop('program', None)
+        attrs.pop('section', None)
+        
+        return attrs
+
+    def create(self, validated_data):
+        """Create instance with proper teacher assignment"""
+        instance = super().create(validated_data)
+        return instance
 
 
 # ============ Registration Serializers ============
