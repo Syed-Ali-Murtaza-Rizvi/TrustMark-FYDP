@@ -1,8 +1,7 @@
 import React, { useState } from "react";
-import orgAdminData from "../../data/OrgAdminData";
 
 const Users = () => {
-  const [users, setUsers] = useState(orgAdminData.users);
+  const [users, setUsers] = useState([]);
 
   const [selectedUser, setSelectedUser] = useState(null);
   const [viewModal, setViewModal] = useState(false);

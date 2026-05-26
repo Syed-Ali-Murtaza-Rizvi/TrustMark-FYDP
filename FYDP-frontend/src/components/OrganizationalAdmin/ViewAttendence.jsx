@@ -38,8 +38,19 @@ const normalizeApiCoursewiseRows = (data, selectedCourseCode) => {
       student?.program ?? student?.dept ?? student?.department ?? "-"
     ).trim() || "-";
 
-    const attended = toNumber(student?.attended);
-    const total = toNumber(student?.total_sessions);
+    const attended = toNumber(
+      student?.classes_attended_count ??
+        student?.attended ??
+        student?.present ??
+        student?.attended_count
+    );
+    const total = toNumber(
+      student?.classes_taken_count ??
+        student?.total_sessions ??
+        student?.total_classes_count ??
+        student?.total ??
+        student?.classes_count
+    );
     const computedPercent = total > 0 ? Math.round((attended / total) * 1000) / 10 : 0;
     const percent = Number.isFinite(Number(student?.percent))
       ? Number(student.percent)
@@ -74,8 +85,19 @@ const normalizeApiIndividualStudents = (data) => {
 
     const courses = Array.isArray(student?.courses)
       ? student.courses.map((course, courseIndex) => {
-      const attended = toNumber(course?.attended);
-      const total = toNumber(course?.total_sessions);
+      const attended = toNumber(
+        course?.classes_attended_count ??
+          course?.attended ??
+          course?.present ??
+          course?.attended_count
+      );
+      const total = toNumber(
+        course?.classes_taken_count ??
+          course?.total_sessions ??
+          course?.total_classes_count ??
+          course?.total ??
+          course?.classes_count
+      );
       const computedPercent = total > 0 ? Math.round((attended / total) * 1000) / 10 : 0;
       const percent = Number.isFinite(Number(course?.percent))
         ? Number(course.percent)
@@ -119,11 +141,22 @@ const normalizeApiIndividualStudents = (data) => {
 const getOverallFromCourses = (student) => {
   const list = Array.isArray(student?.courses) ? student.courses : [];
   const totalSessions = list.reduce((sum, course) => {
-    const total = toNumber(course?.total ?? course?.total_sessions ?? course?.totalClasses);
+    const total = toNumber(
+      course?.classes_taken_count ??
+        course?.total ??
+        course?.total_sessions ??
+        course?.totalClasses ??
+        course?.total_classes_count
+    );
     return sum + total;
   }, 0);
   const totalAttended = list.reduce((sum, course) => {
-    const attended = toNumber(course?.attended ?? course?.present);
+    const attended = toNumber(
+      course?.classes_attended_count ??
+        course?.attended ??
+        course?.present ??
+        course?.attended_count
+    );
     return sum + attended;
   }, 0);
 
@@ -232,7 +265,7 @@ const ViewAttendance = ({ years, batches, programs, courses }) => {
   };
 
   const handleIndividualSearch = async () => {
-    const rollQuery = roll.trim().toLowerCase();
+    const rollQuery = roll.trim();
     const yearQuery = year.trim();
     const programQuery = program.trim();
 

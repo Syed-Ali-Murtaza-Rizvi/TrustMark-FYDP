@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import orgAdminData from "../data/OrgAdminData";
 import "../styles/orgAdmin.css";
 import {
   LayoutDashboard,
@@ -26,7 +25,7 @@ const AdminDashboard = () => {
       case "overview":
         return <Overview />;
       case "admins":
-        return <Admins data={orgAdminData.admins} />;
+        return <Admins data={[]} />;
       case "eventAdmins":
         return <EventAdmins />;
       case "meetings":

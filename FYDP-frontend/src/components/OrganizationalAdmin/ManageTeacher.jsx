@@ -282,6 +282,29 @@ const ManageTeachers = ({ programs = [], years = [] }) => {
   };
 
   const [teachers, setTeachers] = useState(getTeachers());
+  const [totalTeachers, setTotalTeachers] = useState(0);
+  const [loadingTotalTeachers, setLoadingTotalTeachers] = useState(true);
+
+  /* ======================
+     FETCH TOTAL TEACHERS FROM API
+  ====================== */
+  React.useEffect(() => {
+    const fetchTotalTeachers = async () => {
+      try {
+        setLoadingTotalTeachers(true);
+        const { data } = await axios.get("/api/teachers/");
+        const teachersList = Array.isArray(data) ? data : (data.results ?? []);
+        setTotalTeachers(teachersList.length);
+      } catch (err) {
+        console.error("Failed to fetch total teachers count:", err);
+        setTotalTeachers(0);
+      } finally {
+        setLoadingTotalTeachers(false);
+      }
+    };
+
+    fetchTotalTeachers();
+  }, []);
 
   /* ======================
      REGISTER FORM
@@ -395,6 +418,8 @@ const ManageTeachers = ({ programs = [], years = [] }) => {
         localStorage.setItem("teachers", JSON.stringify(nextTeachers));
         return nextTeachers;
       });
+      // Update total teachers count
+      setTotalTeachers(prev => prev + 1);
       setForm({ id: "", name: "", email: "", password: "", phone: "", courses: [createEmptyCourse()] });
     } catch (err) {
       console.error("Teacher registration error:", err.response?.data || err.message);
@@ -448,6 +473,8 @@ const ManageTeachers = ({ programs = [], years = [] }) => {
       await axios.delete(`/api/teachers/${id}/`);
       setFilteredTeachers(prev => prev.filter(t => (t.teacher_id || t.id || t.teacherId) !== id));
       setTeachers(prev => prev.filter(t => (t.teacher_id || t.id || t.teacherId) !== id));
+      // Update total teachers count
+      setTotalTeachers(prev => Math.max(0, prev - 1));
       alert("Teacher deleted successfully.");
     } catch (err) {
       alert(err.response?.data?.message || "Failed to delete teacher.");
@@ -526,7 +553,9 @@ const ManageTeachers = ({ programs = [], years = [] }) => {
           <BookOpen size={20} />
           <span>Manage Teachers</span>
         </span>
-        <span className="badge">{teachers.length} Total</span>
+        <span className="badge">
+          {loadingTotalTeachers ? "Loading..." : `${totalTeachers} Total`}
+        </span>
       </div>
 
       {/* REGISTER */}

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "../../utils/axiosInstance";
-import adminData from "../../data/AdminData";
 import AdminHeader from "../../components/OrganizationalAdmin/AdminHeader";
 import AttendanceRequests from "../../components/OrganizationalAdmin/AttendenceRequest";
 import ManageStudents from "../../components/OrganizationalAdmin/ManageStudents";
@@ -15,12 +14,12 @@ const OrganizationalAdminDashboard = () => {
   const [tab, setTab] = useState("requests");
   const [requests, setRequests] = useState([]);
   const [studentFilterOptions, setStudentFilterOptions] = useState({
-    years: adminData.years ?? [],
-    programs: adminData.programs ?? [],
+    years: [],
+    programs: [],
   });
   const [teacherFilterOptions, setTeacherFilterOptions] = useState({
-    years: adminData.years ?? [],
-    programs: adminData.programs ?? [],
+    years: [],
+    programs: [],
   });
 
   useEffect(() => {
@@ -78,8 +77,8 @@ const OrganizationalAdminDashboard = () => {
           : [];
 
       setStudentFilterOptions({
-        years: years.length ? years : (adminData.years ?? []),
-        programs: programs.length ? programs : (adminData.programs ?? []),
+        years: years.length ? years : [],
+        programs: programs.length ? programs : [],
       });
     } catch (err) {
       console.error("Failed to fetch student filter options", err);
@@ -99,8 +98,8 @@ const OrganizationalAdminDashboard = () => {
         : [];
 
       setTeacherFilterOptions({
-        years: years.length ? years : (adminData.years ?? []),
-        programs: programs.length ? programs : (adminData.programs ?? []),
+        years: years.length ? years : [],
+        programs: programs.length ? programs : [],
       });
     } catch (err) {
       console.error("Failed to fetch teacher filter options", err);
@@ -164,7 +163,7 @@ const OrganizationalAdminDashboard = () => {
 
       {tab === "students" && (
         <ManageStudents
-          students={adminData.students}
+          students={[]}
           years={studentFilterOptions.years}
           programs={studentFilterOptions.programs}
           onRegister={handleRegisterStudent}
@@ -173,10 +172,10 @@ const OrganizationalAdminDashboard = () => {
 
       {tab === "teachers" && (
         <ManageTeachers
-          teachers={adminData.teachers}
+          teachers={[]}
           years={teacherFilterOptions.years}
           programs={teacherFilterOptions.programs}
-          departments={adminData.departments}
+          departments={[]}
           onRegister={handleRegisterTeacher}
         />
       )}
@@ -184,10 +183,10 @@ const OrganizationalAdminDashboard = () => {
       {tab === "view" && (
         <ViewAttendance
           years={studentFilterOptions.years}
-          batches={adminData.batches}
+          batches={[]}
           programs={studentFilterOptions.programs}
-          courses={adminData.courses}
-          records={adminData.studentAttendanceRecords}
+          courses={[]}
+          records={[]}
         />
       )}
     </div>

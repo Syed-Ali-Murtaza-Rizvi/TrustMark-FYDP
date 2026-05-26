@@ -1,8 +1,7 @@
 import React, { useState } from "react";
-import orgAdminData from "../../data/OrgAdminData";
 
 const Payments = () => {
-  const [payments, setPayments] = useState(orgAdminData.payments);
+  const [payments, setPayments] = useState([]);
 
   const [selectedPayment, setSelectedPayment] = useState(null);
   const [viewModal, setViewModal] = useState(false);

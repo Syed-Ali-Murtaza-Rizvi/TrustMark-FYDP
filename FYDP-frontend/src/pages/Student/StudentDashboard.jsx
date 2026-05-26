@@ -104,7 +104,8 @@ const StudentDashboard = () => {
 
           let total =
             toNumber(
-              c.classes_total_count ??
+              c.classes_taken_count ??
+                c.classes_total_count ??
                 c.total_classes_count ??
                 c.total_classes ??
                 c.classes_held_count ??

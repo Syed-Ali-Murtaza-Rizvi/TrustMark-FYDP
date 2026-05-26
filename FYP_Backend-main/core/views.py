@@ -1880,36 +1880,90 @@ class UpdateAttendanceRequestViewSet(viewsets.ModelViewSet):
         if approve:
             # Approve: Update the student's attendance in the StudentCourse
             added_count = len([c.strip() for c in (attendance_request.classes_to_add or '').split(',') if c.strip()])
+            request_id = attendance_request.id
+            
             try:
                 student_course = StudentCourse.objects.get(
                     student=attendance_request.student,
                     course=attendance_request.course,
                     teacher=attendance_request.teacher
                 )
-                student_course.classes_attended_count = (student_course.classes_attended_count or 0) + added_count
+                
+                # Get the TaughtCourse to check total classes taken
+                taught_course = TaughtCourse.objects.filter(
+                    teacher=attendance_request.teacher,
+                    course=attendance_request.course
+                ).first()
+                
+                total_classes_taken = taught_course.classes_taken_count if taught_course else 0
+                new_attended_count = (student_course.classes_attended_count or 0) + added_count
+                
+                # Validate: attended count should not exceed total classes taken
+                if new_attended_count > total_classes_taken:
+                    # Delete the request and return error
+                    attendance_request.delete()
+                    return Response(
+                        {
+                            'error': f'Cannot approve: Adding {added_count} classes would result in {new_attended_count} classes attended, '
+                                   f'but only {total_classes_taken} total classes were taken by this teacher in this course',
+                            'current_attended': student_course.classes_attended_count,
+                            'attempting_to_add': added_count,
+                            'total_classes': total_classes_taken,
+                            'request_id': request_id
+                        },
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                student_course.classes_attended_count = new_attended_count
                 student_course.save(update_fields=['classes_attended_count'])
             except StudentCourse.DoesNotExist:
                 # Create new StudentCourse record if it doesn't exist
+                taught_course = TaughtCourse.objects.filter(
+                    teacher=attendance_request.teacher,
+                    course=attendance_request.course
+                ).first()
+                
+                total_classes_taken = taught_course.classes_taken_count if taught_course else 0
+                
+                # Validate: attended count should not exceed total classes taken
+                if added_count > total_classes_taken:
+                    # Delete the request and return error
+                    attendance_request.delete()
+                    return Response(
+                        {
+                            'error': f'Cannot approve: Adding {added_count} classes exceeds total {total_classes_taken} classes '
+                                   f'taken by this teacher in this course',
+                            'total_classes': total_classes_taken,
+                            'attempting_to_add': added_count,
+                            'request_id': request_id
+                        },
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
                 StudentCourse.objects.create(
                     student=attendance_request.student,
                     course=attendance_request.course,
                     teacher=attendance_request.teacher,
                     classes_attended_count=added_count,
                 )
+            
             attendance_request.status = 'approved'
             message = 'Attendance request approved and attendance updated'
         else:
             attendance_request.status = 'rejected'
             message = 'Attendance request rejected'
+            request_id = attendance_request.id
 
         attendance_request.processed_at = timezone.now()
         attendance_request.processed_by = management
         attendance_request.save()
 
-        serializer = self.get_serializer(attendance_request)
+        # Delete the request after processing (both approval and rejection)
+        attendance_request.delete()
+        
         return Response({
             'message': message,
-            'request': serializer.data
+            'request_id': request_id
         }, status=status.HTTP_200_OK)
 
     def approve(self, request, pk=None):
@@ -2191,7 +2245,13 @@ class RFIDScanView(APIView):
         """
         Helper method to mark attendance and update StudentCourse if both scans are complete.
         """
-        if record.rfid_scanned and record.qr_scanned and not record.is_present:
+        require_rfid = getattr(settings, 'ATTENDANCE_REQUIRE_RFID', True)
+        scans_complete = (
+            record.rfid_scanned and record.qr_scanned
+            if require_rfid
+            else (record.rfid_scanned or record.qr_scanned)
+        )
+        if scans_complete and not record.is_present:
             record.is_present = True
             record.marked_present_at = timezone.now()
             
@@ -2278,7 +2338,7 @@ class RFIDScanView(APIView):
             'rfid_scanned': True,
             'qr_scanned': record.qr_scanned,
             'is_present': record.is_present,
-            'needs_qr': not record.qr_scanned
+            'needs_qr': getattr(settings, 'ATTENDANCE_REQUIRE_RFID', True) and not record.qr_scanned
         }, status=status.HTTP_200_OK)
 
 
@@ -2293,7 +2353,13 @@ class QRScanView(APIView):
         """
         Helper method to mark attendance and update StudentCourse if both scans are complete.
         """
-        if record.rfid_scanned and record.qr_scanned and not record.is_present:
+        require_rfid = getattr(settings, 'ATTENDANCE_REQUIRE_RFID', True)
+        scans_complete = (
+            record.rfid_scanned and record.qr_scanned
+            if require_rfid
+            else (record.rfid_scanned or record.qr_scanned)
+        )
+        if scans_complete and not record.is_present:
             record.is_present = True
             record.marked_present_at = timezone.now()
             
@@ -2380,7 +2446,7 @@ class QRScanView(APIView):
             'rfid_scanned': record.rfid_scanned,
             'qr_scanned': True,
             'is_present': record.is_present,
-            'needs_rfid': not record.rfid_scanned
+            'needs_rfid': getattr(settings, 'ATTENDANCE_REQUIRE_RFID', True) and not record.rfid_scanned
         }, status=status.HTTP_200_OK)
 
 

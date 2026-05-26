@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
+from django.db.models import Sum
 from .models import (
     Student, Teacher, Management, Course, Class, TaughtCourse, StudentCourse,
     UpdateAttendanceRequest, AttendanceSession, AttendanceRecord
@@ -14,10 +15,38 @@ class StudentCourseInlineSerializer(serializers.ModelSerializer):
     course_id = serializers.IntegerField(source='course.course_id', read_only=True)
     course_code = serializers.CharField(source='course.course_code', read_only=True)
     course_name = serializers.CharField(source='course.course_name', read_only=True)
+    classes_taken_count = serializers.SerializerMethodField()
+
+    def get_classes_taken_count(self, obj):
+        student = getattr(obj, 'student', None)
+        teacher = getattr(obj, 'teacher', None)
+
+        if teacher and student:
+            taught_course = TaughtCourse.objects.filter(
+                teacher=teacher,
+                course=obj.course,
+                section=student.section,
+                year=student.year,
+            ).first()
+            if taught_course:
+                return taught_course.classes_taken_count or 0
+
+        if not student:
+            return 0
+
+        session_qs = AttendanceSession.objects.filter(
+            course=obj.course,
+            section=student.section,
+            year=student.year,
+        )
+        if student.management_id:
+            session_qs = session_qs.filter(teacher__management=student.management)
+
+        return session_qs.aggregate(total=Sum('slot_count')).get('total') or 0
 
     class Meta:
         model = StudentCourse
-        fields = ['id', 'course_id', 'course_code', 'course_name', 'classes_attended_count', 'classes_absent_count']
+        fields = ['id', 'course_id', 'course_code', 'course_name', 'classes_attended_count', 'classes_taken_count']
 
 
 class StudentSerializer(serializers.ModelSerializer):

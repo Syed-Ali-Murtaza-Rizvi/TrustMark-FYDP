@@ -1,8 +1,7 @@
 import React, { useState } from "react";
-import orgAdminData from "../../data/OrgAdminData";
 
 const Meetings = () => {
-  const [meetings, setMeetings] = useState(orgAdminData.meetings);
+  const [meetings, setMeetings] = useState([]);
 
   const [selectedMeeting, setSelectedMeeting] = useState(null);
   const [viewModal, setViewModal] = useState(false);

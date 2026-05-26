@@ -1,5 +1,4 @@
 import React from "react";
-import orgAdminData from "../../data/OrgAdminData";
 import {
   Users,
   UserCheck,
@@ -10,7 +9,14 @@ import {
 } from "lucide-react";
 
 const Overview = () => {
-  const data = orgAdminData.overview;
+  const data = {
+    totalAdmins: 0,
+    eventAdmins: 0,
+    participants: 0,
+    teachers: 0,
+    students: 0,
+    courses: 0
+  };
 
   return (
     <div className="overview-grid">
