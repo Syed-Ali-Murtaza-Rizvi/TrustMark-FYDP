@@ -16,14 +16,9 @@ from pathlib import Path
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-try:
-    from dotenv import load_dotenv
-except ImportError:  # pragma: no cover - optional in some environments
-    load_dotenv = None
+from dotenv import load_dotenv
 
-if load_dotenv is not None:
-    load_dotenv(BASE_DIR / '.env')
-
+load_dotenv()
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
@@ -32,7 +27,7 @@ if load_dotenv is not None:
 SECRET_KEY = 'django-insecure-y5(s6m$eihu0hw^js7j1dfdmposk(l_877=0!b24!*4p-^19ez'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DJANGO_DEBUG', 'True') == 'True'
 
 # Comma-separated hosts/IPs for dev access (e.g. "localhost,127.0.0.1,192.168.1.10").
 _default_allowed_hosts = ['testserver', 'localhost', '127.0.0.1']
@@ -41,6 +36,10 @@ ALLOWED_HOSTS = _env_allowed_hosts or _default_allowed_hosts
 for _host in _default_allowed_hosts:
     if _host not in ALLOWED_HOSTS:
         ALLOWED_HOSTS.append(_host)
+# Add Azure host
+AZURE_HOSTNAME = os.environ.get('WEBSITE_HOSTNAME')
+if AZURE_HOSTNAME and AZURE_HOSTNAME not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(AZURE_HOSTNAME)
 
 # Base URLs used for event invite-link generation and redirect flows.
 DEFAULT_EVENT_BASE_URL = os.environ.get('DEFAULT_EVENT_BASE_URL', 'http://localhost:8000').rstrip('/')
@@ -92,6 +91,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -128,7 +128,7 @@ WSGI_APPLICATION = 'FYP_Backend.wsgi.application'
 # Use SQLite for testing if TESTING environment variable is set
 import sys
 TESTING = 'test' in sys.argv
-USE_SQLITE = os.environ.get('USE_SQLITE', 'True') == 'True'
+USE_SQLITE = os.environ.get('USE_SQLITE', 'False') == 'True'
 
 if TESTING:
     DATABASES = {
@@ -152,11 +152,11 @@ else:
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
-            'NAME': 'school_db',
-            'USER': 'dbuser',
-            'PASSWORD': 'dbpass',
-            'HOST': 'localhost',  # or DB host/IP
-            'PORT': '5433',
+            'NAME': os.environ.get('DB_NAME', 'postgres'),
+            'USER': os.environ.get('DB_USER', 'dbuser'),
+            'PASSWORD': os.environ.get('DB_PASSWORD', 'dbpass'),
+            'HOST': os.environ.get('DB_HOST', 'localhost'),
+            'PORT': os.environ.get('DB_PORT', '5432'),
         }
     }
 
@@ -196,6 +196,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
